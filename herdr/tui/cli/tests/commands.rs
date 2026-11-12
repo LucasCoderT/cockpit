@@ -198,56 +198,59 @@ fn act_failures_come_back_as_a_notification() {
 }
 
 #[test]
-fn hub_act_hands_a_review_action_to_the_hub_and_prints_its_answer() {
+fn hub_act_hands_any_app_action_to_the_hub_and_prints_its_whole_answer() {
     let sandbox = Sandbox::new();
-    let seen = fake_hub(&sandbox, Some(json!({"note": "review sent to the agent (1 comment)", "pending": {}, "refreshing": {}, "error": null})));
-    let review = json!({"scope": "branch", "repo": "/src/acme/api", "comments": [{"path": "src/a.rs", "line": 12, "text": "use the constant"}]});
-    let cases =
-        [("send", json!(["t7", review])), ("walkthrough", json!(["/src/acme/api", "branch", "haiku"])), ("stop_walkthrough", json!(["/src/acme/api", "pr"]))];
-    for (action, args) in &cases {
-        let out = sandbox.cockpit(&["hub", "act", "review", action, &args.to_string()], &[]);
-        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-        assert_eq!(serde_json::from_str::<Value>(&stdout(&out)).unwrap()["note"], "review sent to the agent (1 comment)");
-    }
-    let seen = seen.lock().unwrap();
-    assert_eq!(seen.len(), cases.len());
-    for ((action, args), request) in cases.iter().zip(seen.iter()) {
-        assert_eq!((&request["op"], &request["app"], &request["action"], &request["args"]), (&json!("act"), &json!("review"), &json!(action), args));
-    }
-}
-
-#[test]
-fn hub_act_fails_with_the_hubs_error() {
-    let sandbox = Sandbox::new();
-    fake_hub(&sandbox, Some(json!({"note": "", "pending": {}, "refreshing": {}, "error": "walkthrough: no changes to walk through"})));
-    let out = sandbox.cockpit(&["hub", "act", "review", "walkthrough", r#"["/src/acme/api", "uncommitted", "haiku"]"#], &[]);
-    assert_eq!((out.status.code(), stderr(&out).trim()), (Some(1), "walkthrough: no changes to walk through"));
-}
-
-#[test]
-fn hub_act_refuses_every_other_action_and_malformed_arguments() {
-    let sandbox = Sandbox::new();
-    let seen = fake_hub(&sandbox, Some(json!({"note": "done", "pending": {}, "refreshing": {}, "error": null})));
-    let cases: [&[&str]; 12] = [
-        &["hub", "act", "review", "send", r#"["other/t7", {"comments": []}]"#],
-        &["hub", "act", "review", "send", r#"["app:t7", {"comments": []}]"#],
-        &["hub", "act", "review", "send", r#"["w1-p2", {"comments": []}]"#],
-        &["hub", "act", "inbox", "review", "[]"],
-        &["hub", "act", "review", "open_reviewr", r#"["/src/acme/api"]"#],
-        &["hub", "act", "review", "send"],
-        &["hub", "act", "review", "walkthrough", "not json"],
-        &["hub", "act", "review", "walkthrough", r#"["acme/api", "branch", "haiku"]"#],
-        &["hub", "act", "review", "walkthrough", r#"["/src/acme/api", "everything", "haiku"]"#],
-        &["hub", "act", "review", "stop_walkthrough", r#"["/src/acme/api", "branch", "extra"]"#],
-        &["hub", "act", "review", "send", r#"["", {"comments": []}]"#],
-        &["hub", "act", "review", "send", r#"["t7", "use the constant"]"#],
+    let answer = json!({"note":"done","pending":{"review":"busy"},"refreshing":{},"error":null});
+    let seen = fake_hub(&sandbox, Some(answer.clone()));
+    let cases = [
+        ("review", "send", json!(["t7", {"comments":[]}])),
+        ("runbook", "done", json!([["eng-412", "2"]])),
+        ("todo", "add", json!(["Ship ENG-412"])),
+        ("agents", "seen", json!([{"terminal":"app:t7"}])),
     ];
-    for args in cases {
-        let out = sandbox.cockpit(args, &[]);
-        assert_eq!(out.status.code(), Some(1), "{args:?} was taken");
-        assert!(!stderr(&out).trim().is_empty());
+    for (app, action, args) in &cases {
+        let out = sandbox.cockpit(&["hub", "act", app, action, &args.to_string()], &[]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert_eq!(serde_json::from_str::<Value>(&stdout(&out)).unwrap(), answer);
     }
-    assert!(seen.lock().unwrap().is_empty(), "a refused action reached the hub");
+    for ((app, action, args), request) in cases.iter().zip(seen.lock().unwrap().iter()) {
+        assert_eq!((&request["app"], &request["action"], &request["args"]), (&json!(app), &json!(action), args));
+    }
+}
+
+#[test]
+fn hub_act_passes_armed() {
+    let sandbox = Sandbox::new();
+    let seen = fake_hub(&sandbox, Some(json!({"note":"done"})));
+    let out = sandbox.cockpit(&["hub", "act", "todo", "delete", "[]", "--armed", "delete-notes"], &[]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(seen.lock().unwrap()[0]["armed"], "delete-notes");
+}
+
+#[test]
+fn hub_act_prints_the_hubs_error_in_its_answer() {
+    let sandbox = Sandbox::new();
+    let answer = json!({"note":"","error":"no changes to walk through"});
+    fake_hub(&sandbox, Some(answer.clone()));
+    let out = sandbox.cockpit(&["hub", "act", "review", "walkthrough", r#"["/src/acme/api","branch","haiku"]"#], &[]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(serde_json::from_str::<Value>(&stdout(&out)).unwrap(), answer);
+}
+
+#[test]
+fn hub_act_refuses_malformed_arguments() {
+    let sandbox = Sandbox::new();
+    let seen = fake_hub(&sandbox, Some(json!({"note":"done"})));
+    for args in [
+        vec!["hub", "act", "review", "send", r#"["other/t7",{"comments":[]}]"#],
+        vec!["hub", "act", "review", "send", r#"["app:t7",{"comments":[]}]"#],
+        vec!["hub", "act", "todo", "add", "not json"],
+        vec!["hub", "act", "todo", "add", "{}"],
+        vec!["hub", "act", "todo", "add"],
+    ] {
+        assert_eq!(sandbox.cockpit(&args, &[]).status.code(), Some(1));
+    }
+    assert!(seen.lock().unwrap().is_empty());
 }
 
 #[test]

@@ -54,37 +54,42 @@ fn press(args: &[String]) -> Result<String, String> {
     }
 }
 
-const HUB_USAGE: &str = "cockpit hub act review send|walkthrough|stop_walkthrough <JSON list of arguments>";
+const HUB_USAGE: &str = "cockpit hub act <app> <action> <JSON list of arguments> [--armed <token>]";
 
-/// `cockpit hub act review <action> <args>`: a remote desk's review action, run on the runner through Herdr's machine
-/// connection and handed to the hub on its unix socket, `{note}` printed as JSON.
-pub fn hub_review(args: &[String]) {
-    match runner_review(args) {
-        Ok(note) => println!("{}", json!({ "note": note })),
+/// Hands an app action to the runner's hub over its unix socket and prints the complete JSON answer.
+pub fn hub_act(args: &[String]) {
+    match runner_act(args) {
+        Ok(answer) => println!("{answer}"),
         Err(message) => crate::proc::fail(&message),
     }
 }
 
-/// Only the review panel's own actions, with the arguments it sends: everything else stays out of reach.
-fn runner_review(args: &[String]) -> Result<String, String> {
-    let [app, action, list] = args else { return Err(HUB_USAGE.into()) };
-    let parsed: Vec<Value> = serde_json::from_str(list).map_err(|_| format!("review {action} takes a JSON list of arguments, not {list}"))?;
-    let repo = |v: &Value| v.as_str().is_some_and(|p| p.starts_with('/'));
-    let scope = |v: &Value| matches!(v.as_str(), Some("uncommitted" | "branch" | "pr"));
-    let fits = match (app.as_str(), action.as_str(), parsed.as_slice()) {
-        // An app terminal's own address (t7): never a handle or another machine's terminal.
-        ("review", "send", [terminal, review]) => {
-            terminal.as_str().is_some_and(|t| !t.is_empty() && t.chars().all(|c| c.is_ascii_alphanumeric())) && review["comments"].is_array()
-        }
-        ("review", "walkthrough", [path, s, model]) => repo(path) && scope(s) && model.is_string(),
-        ("review", "stop_walkthrough", [path, s]) => repo(path) && scope(s),
-        ("review", "send" | "walkthrough" | "stop_walkthrough", _) => false,
+fn runner_act(args: &[String]) -> Result<Value, String> {
+    let (fields, armed) = match args {
+        [_, _, _] => (args, None),
+        [_, _, _, flag, token] if flag == "--armed" => (&args[..3], Some(token.as_str())),
         _ => return Err(HUB_USAGE.into()),
     };
-    if !fits {
-        return Err(format!("review {action} does not take {list}"));
+    let (app, action, list) = (&fields[0], &fields[1], &fields[2]);
+    let parsed: Vec<Value> = serde_json::from_str(list).map_err(|_| format!("{app} {action} takes a JSON list of arguments"))?;
+    check_runner_args(app, action, &parsed)?;
+    let env = json!({"HERDR_PANE_ID": std::env::var("HERDR_PANE_ID").unwrap_or_default()});
+    let answer =
+        cockpit_core::hub::request_raw(&json!({"op":"act","app":app,"action":action,"args":parsed,"armed":armed,"env":env}), Duration::from_secs(120))?;
+    if answer["unknown"] == true {
+        return Err(format!("the cockpit hub has no {app} action {action}"));
     }
-    act(app, action, parsed, None)
+    Ok(answer)
+}
+
+fn check_runner_args(app: &str, action: &str, args: &[Value]) -> Result<(), String> {
+    if app == "review" && action == "send" {
+        let fits = matches!(args, [terminal, review] if terminal.as_str().is_some_and(|t| !t.is_empty() && t.chars().all(|c| c.is_ascii_alphanumeric())) && review["comments"].is_array());
+        if !fits {
+            return Err("review send takes a runner terminal address and a review with comments".into());
+        }
+    }
+    Ok(())
 }
 
 /// The hub's action of that app, its note as the answer.

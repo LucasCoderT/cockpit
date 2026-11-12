@@ -124,7 +124,7 @@ fn main() {
         "hub" if rest == ["stop"] => gui::hub_stop(),
         "hub" if rest == ["window-token"] => window::token(),
         "hub" if rest.len() == 2 && rest[0] == "shown" => gui::hub_shown(&rest[1]),
-        "hub" if rest.first().is_some_and(|a| a == "act") => act::hub_review(&rest[1..]),
+        "hub" if rest.first().is_some_and(|a| a == "act") => act::hub_act(&rest[1..]),
         "app" => gui::main(rest),
         "hub" if rest == ["ping"] => std::process::exit(if ping(Duration::from_secs(2)) { 0 } else { 1 }),
         "update" if rest.is_empty() => {
