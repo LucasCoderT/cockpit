@@ -483,7 +483,7 @@ pub fn run_in(handle: &str, line: &str) -> bool {
 /// a moment later.
 pub fn app_type(terminal: &str, text: &str) -> bool {
     if !local_app() {
-        return app_do("terminal.paste", &json!({"terminal":terminal,"text":text})).is_some();
+        return remote_type(terminal, text, window);
     }
     let before = clipboard();
     if !files::copy(text) {
@@ -496,6 +496,10 @@ pub fn app_type(terminal: &str, text: &str) -> bool {
         files::copy(&String::from_utf8_lossy(&before));
     }
     pasted
+}
+
+fn remote_type(terminal: &str, text: &str, call: Relay) -> bool {
+    call("do", "terminal.paste", &json!({"terminal":terminal,"text":text})).is_ok()
 }
 
 /// The clipboard's text, read with the same tools `files::copy` writes with: pbpaste, wl-paste, xclip.
@@ -605,13 +609,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_remote_paste_test_never_uses_an_installed_local_app_or_clipboard() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let bin = root.path().join("bin");
+        let log = root.path().join("calls");
+        std::fs::create_dir_all(&bin).unwrap();
+        for name in ["herdr-app", "pbcopy", "pbpaste", "wl-copy", "wl-paste", "xclip"] {
+            let file = bin.join(name);
+            std::fs::write(&file, "#!/bin/sh\nprintf '%s\\n' \"$0 $*\" >> \"$TASK_FRONTEND_CALLS\"\nprintf '%s\\n' '{}'\n").unwrap();
+            std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "frontend::tests::remote_paste_carries_text_without_using_the_servers_clipboard"])
+            .env_clear()
+            .env("HOME", root.path())
+            .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+            .env("HERDR_APP_BIN", bin.join("herdr-app"))
+            .env("HERDR_APP_HOME", root.path().join("app"))
+            .env("TASK_FRONTEND_CALLS", &log)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stdout));
+        assert!(!log.exists(), "the remote test reached a desktop or clipboard command: {}", std::fs::read_to_string(log).unwrap_or_default());
+    }
+
+    #[test]
     fn remote_paste_carries_text_without_using_the_servers_clipboard() {
-        set_relay(|cmd, command, args| {
+        assert!(remote_type("t7", "Ship ENG-412", |cmd, command, args| {
             assert_eq!((cmd, command), ("do", "terminal.paste"));
             assert_eq!(args, &json!({"terminal":"t7","text":"Ship ENG-412"}));
             Ok(json!({}))
-        });
-        assert!(app_type("t7", "Ship ENG-412"));
+        }));
     }
 
     #[test]
