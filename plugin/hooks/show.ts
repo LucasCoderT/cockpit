@@ -232,21 +232,23 @@ async function showDir($: $) {
 }
 
 // The Herdr app's show views open now, as the hub knows them from their subscriptions; kept a few seconds.
-let shownSeen: { at: number; names: Set<string> } | undefined
+let shownSeen: { session: string; at: number; names: Set<string> } | undefined
 
 async function appShown($: $) {
-  if (shownSeen && Date.now() - shownSeen.at < 2_500) return shownSeen.names
+  const session = await $.session.id()
+  if (shownSeen?.session === session && Date.now() - shownSeen.at < 2_500) return shownSeen.names
   const cockpit = await cockpitCommand($)
   const listed = cockpit ? await $.process.run([...cockpit, 'hub', 'shown', 'show'], { timeoutMs: 5_000 }) : undefined
-  const args = listed?.exitCode === 0 ? (JSON.parse(listed.stdout || '[]') as { name?: string }[]) : []
-  shownSeen = { at: Date.now(), names: new Set(args.map(a => a?.name).filter((n): n is string => typeof n === 'string')) }
+  const value = listed?.exitCode === 0 ? JSON.parse(listed.stdout || '[]') : []
+  const args = (Array.isArray(value) ? value : []) as {name?:string}[]
+  shownSeen = { session, at: Date.now(), names: new Set(args.map(a => a?.name).filter((n): n is string => typeof n === 'string')) }
   return shownSeen.names
 }
 
 // Whether the pane showing this view still runs: `cockpit show` keeps its pid in <name>.pid while it does, the app's
 // view follows the hub while it is drawn.
 async function isOpen($: $, dir: string, name: string) {
-  if (await $.fs.stat(`${dir}/${name}.app`).then(() => true, () => false)) return (await appShown($)).has(name)
+  if ((await frontendOf($)) === 'app' || await $.fs.stat(`${dir}/${name}.app`).then(() => true, () => false)) return (await appShown($)).has(name)
   const pid = (await $.fs.read(`${dir}/${name}.pid`).catch(() => '')).trim()
   return /^\d+$/.test(pid) && (await $.process.run(['kill', '-0', pid])).exitCode === 0
 }
@@ -256,7 +258,7 @@ const openSeen = new Map<string, { at: number; mtime: number; isOpen: boolean }>
 
 // isOpen for the polls: kept until the pid file changes or 30 s pass, since a pane that quits removes its pid file.
 async function isOpenSoon($: $, dir: string, name: string, pidMtime: number) {
-  if (await $.fs.stat(`${dir}/${name}.app`).then(() => true, () => false)) return (await appShown($)).has(name)
+  if ((await frontendOf($)) === 'app' || await $.fs.stat(`${dir}/${name}.app`).then(() => true, () => false)) return (await appShown($)).has(name)
   const seen = openSeen.get(name)
   if (seen && seen.mtime === pidMtime && Date.now() - seen.at < PID_RECHECK_MS) return seen.isOpen
   const value = pidMtime > 0 && (await isOpen($, dir, name))
@@ -347,6 +349,7 @@ async function presentNative($: $,name:string,spec:Spec,here:Here|undefined,exis
     if ('error' in focused) return {result:await windowFailure($,name,focused)}
     const opened = await appCall($,['do',`cockpit.panel-open:show:${name}`,'{}'])
     if ('error' in opened) return {result:await windowFailure($,name,opened)}
+    shownSeen = undefined
     return {result:`Opened ${name} in Documents beside this session.`,documents:true}
   }
   if (await isOpen($,await showDir($),name)) return {result:`Updated the ${name} pane.`}
@@ -460,6 +463,14 @@ export async function viewsOf($: $, session: string): Promise<ViewChip[]> {
 // A chip's press: an open view's pane closes, a hidden one opens again where it was. Returns whether it opened.
 export async function toggleView($: $, name: string, here: Here | undefined) {
   const dir = await showDir($)
+  const spec = await readSpec($,name)
+  if (here?.frontend === 'app' && spec && (!spec.placement || spec.placement === 'right')) {
+    const focused = await appCall($,['do','pane.focus',JSON.stringify({terminal:here.terminal})])
+    if ('error' in focused) return false
+    const opened = await appCall($,['do',`cockpit.panel-open:show:${name}`,'{}'])
+    shownSeen = undefined
+    return 'value' in opened
+  }
   if (await isOpen($, dir, name)) {
     const app = JSON.parse(await $.fs.read(`${dir}/${name}.app`).catch(() => 'null')) as { pane?: string } | null
     if (app?.pane) {
@@ -471,8 +482,7 @@ export async function toggleView($: $, name: string, here: Here | undefined) {
     await $.process.run(['kill', pid])
     return false
   }
-  const spec = await readSpec($, name)
-  if (spec?.placement === 'browser') await presentPage($, name, spec)
+  if (spec?.placement === 'browser') await presentPage($, name, spec, here, true)
   else if (spec && here) await openPane($, here, name, spec.placement ?? 'right')
   return true
 }

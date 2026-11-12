@@ -30,6 +30,12 @@ pub fn go(target: &Value) -> Value {
     if app == "session" {
         return session(target);
     }
+    if frontend::current() == frontend::Frontend::App && crate::views::window_sender().is_some() {
+        return match crate::window::call("do", "cockpit.focus", &json!({"target":target}), std::time::Duration::from_secs(10)) {
+            Ok(_) => json!({"ok":true}),
+            Err(error) => json!({"error":error.to_string(),"kind":error.kind()}),
+        };
+    }
     focus::request(app, target);
     crate::views::focus(app, target);
     if let Some(space) = space_of(app) {

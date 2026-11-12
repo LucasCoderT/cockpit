@@ -80,7 +80,7 @@ fn owner(slug: &str, cache: &Path) -> Value {
     if !found.is_object() {
         return Value::Null;
     }
-    json!({"terminal":found.get("terminal").unwrap_or(&found["pane"]),"session":found["session"]})
+    json!({"terminal":found.get("terminal").unwrap_or(&found["pane"]),"session":found["session"],"at":found["at"]})
 }
 
 /// A background refresh of the runbook: running from its log's start until its exit status lands beside it.
@@ -322,7 +322,7 @@ mod tests {
         assert_eq!(view["books"][0]["owner"], Value::Null);
         files::write(&cache.join("runbook-owners.json"), &json!({"eng-412":{"terminal":"app:t7","session":"acme-session","at":1}})).unwrap();
         let view = model(&books, &root.path().join("handoffs"), &cache, &Value::Null);
-        assert_eq!(view["books"][0]["owner"], json!({"terminal":"app:t7","session":"acme-session"}));
+        assert_eq!(view["books"][0]["owner"], json!({"terminal":"app:t7","session":"acme-session","at":1}));
     }
 
     #[test]

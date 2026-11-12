@@ -4,11 +4,9 @@ import {appDo,hereSoon,frontendOf} from './herdr'
 
 // Records which agent wrote a runbook and opens a new one beside that agent.
 export async function noteRunbookWrite($:EngineInterface,filePath:string,existedBefore:boolean):Promise<void> {
- const dir=((await $.env.get('COCKPIT_RUNBOOKS_DIR')) || `${await home($)}/.config/cockpit/runbooks`).replace(/\/+$/,'')
- if(!filePath.startsWith(`${dir}/`)) return
- const name=filePath.slice(dir.length+1)
- if(!/^[a-z0-9][a-z0-9-]*\.md$/i.test(name)) return
- const slug=name.slice(0,-3),cache=await cacheDir($)
+ const slug=await runbookSlug($,filePath)
+ if(!slug) return
+ const cache=await cacheDir($)
  const here=await hereSoon($),frontend=here?.frontend ?? await frontendOf($)
  const terminal=here?.pane ?? (frontend==='app' ? `app:${await $.env.get('HC_TERMINAL_ID')}` : null)
  const owner={terminal,session:await $.session.id(),at:Date.now()}
@@ -22,4 +20,12 @@ export async function noteRunbookWrite($:EngineInterface,filePath:string,existed
    const focused=await appDo($,'pane.focus',{terminal:terminal.slice(4)})
    if(focused) await appDo($,'cockpit.panel-open:runbook',{})
  }
+}
+
+// The slug of a file in the configured flat runbook directory.
+export async function runbookSlug($:EngineInterface,filePath:string):Promise<string|undefined> {
+ const dir=((await $.env.get('COCKPIT_RUNBOOKS_DIR')) || `${await home($)}/.config/cockpit/runbooks`).replace(/\/+$/,'')
+ if(!filePath.startsWith(`${dir}/`)) return undefined
+ const name=filePath.slice(dir.length+1)
+ return /^[a-z0-9][a-z0-9-]*\.md$/i.test(name) ? name.slice(0,-3) : undefined
 }

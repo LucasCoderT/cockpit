@@ -161,7 +161,7 @@ pub fn handle(request: &Value) -> Value {
                 Some(error) => Err(error.to_string()),
                 None => Ok(request["value"].clone()),
             };
-            if window::reply(request["id"].as_u64().unwrap_or(0), field("secret"), outcome) {
+            if window::reply(request["id"].as_u64().unwrap_or(0), field("secret"), field("capability"), outcome) {
                 json!({"ok":true})
             } else {
                 json!({"error":"unknown, expired or unauthorized window reply"})

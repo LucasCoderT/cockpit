@@ -115,7 +115,7 @@ fn a_window_command_reaches_the_window_and_its_reply_comes_back() {
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
     assert!((9_000..=11_000).contains(&(command["deadline"].as_u64().unwrap() - now)));
     let (mut reply, info) = window_tcp(&sandbox);
-    let request = json!({"op":"window_reply","id":command["id"],"secret":secret,"value":{"ok":true},"token":info["token"]});
+    let request = json!({"op":"window_reply","id":command["id"],"secret":secret,"capability":command["capability"],"value":{"ok":true},"token":info["token"]});
     let mut wrong = request.clone();
     wrong["secret"] = json!("wrong");
     writeln!(reply.get_mut(), "{wrong}").unwrap();
@@ -158,7 +158,7 @@ fn the_last_window_to_subscribe_gets_the_commands() {
         let socket = sandbox.socket();
         let caller = std::thread::spawn(move || request_on(&socket, &json!({"op":"window","cmd":"status"})));
         let command = window_read(stream)["window"].clone();
-        hub.request(&json!({"op":"window_reply","id":command["id"],"secret":secret,"value":{key:true}}));
+        hub.request(&json!({"op":"window_reply","id":command["id"],"secret":secret,"capability":command["capability"],"value":{key:true}}));
         assert_eq!(caller.join().unwrap()["value"][key], true);
         if key == "second" {
             stream.get_ref().shutdown(std::net::Shutdown::Both).unwrap();
@@ -473,4 +473,38 @@ fn the_documents_are_written_mirrored_and_pushed() {
     assert_eq!((lease("a", false), lease("b", false), lease("a", true)), (json!(true), json!(false), json!(true)));
     hub.request(&json!({"op": "store.release", "name": "inbox", "holder": "a"}));
     assert_eq!((lease("a", true), lease("b", false)), (json!(false), json!(true)));
+}
+
+#[test]
+fn a_window_reply_needs_the_capability_delivered_only_to_its_window() {
+    let sandbox = sandbox();
+    let hub = Hub::start(&sandbox, &[("COCKPIT_HUB_LISTEN", "::1")]);
+    let token = hub.request(&json!({"op":"window_token"}));
+    let secret = token["secret"].as_str().unwrap();
+    let _other = window_subscribe(&sandbox, secret);
+    let mut selected = window_subscribe(&sandbox, secret);
+    let socket = sandbox.socket();
+    let caller = std::thread::spawn(move || request_on(&socket, &json!({"op":"window","cmd":"ls"})));
+    let cmd = window_read(&mut selected)["window"].clone();
+    let forged = hub.request(&json!({"op":"window_reply","id":cmd["id"],"secret":secret,"capability":"guess","value":{"forged":true}}));
+    assert!(forged["error"].is_string(), "another authorized window consumed the request");
+    assert!(cmd["capability"].as_str().is_some_and(|s| s.len() >= 32));
+    hub.request(&json!({"op":"window_reply","id":cmd["id"],"secret":secret,"capability":cmd["capability"],"value":{"genuine":true}}));
+    assert_eq!(caller.join().unwrap()["value"]["genuine"], true);
+}
+
+#[test]
+fn server_item_navigation_reaches_the_authenticated_window() {
+    let sandbox = sandbox();
+    let hub = Hub::start(&sandbox, &[("COCKPIT_HUB_LISTEN", "::1")]);
+    let token = hub.request(&json!({"op":"window_token"}));
+    let secret = token["secret"].as_str().unwrap();
+    let mut selected = window_subscribe(&sandbox, secret);
+    let socket = sandbox.socket();
+    let caller = std::thread::spawn(move || request_on(&socket, &json!({"op":"go","frontend":"app","target":{"app":"runbook","key":"eng-412","steps":["2"]}})));
+    let cmd = window_read(&mut selected)["window"].clone();
+    assert_eq!(cmd["command"], "cockpit.focus");
+    assert_eq!(cmd["args"]["target"]["key"], "eng-412");
+    hub.request(&json!({"op":"window_reply","id":cmd["id"],"secret":secret,"capability":cmd["capability"],"value":{}}));
+    assert_eq!(caller.join().unwrap()["ok"], true);
 }

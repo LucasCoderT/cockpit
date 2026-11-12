@@ -3,7 +3,7 @@
 
 import net from "net";
 import { exec, appHome, readTextFile, run, window as win, home } from "herdr";
-import { argsToRunner } from "./address.js";
+import { argsToRunner, toRunner } from "./address.js";
 import { runWindowCommand } from "./window.js";
 
 /** Closes a socket, already closed or not: a throw here would end the subscription that is tidying up. */
@@ -204,6 +204,9 @@ export async function request(op, fields = {}) {
     if (op === "go") return focusHere(fields.target);
     if (op === "act") {
       const args = argsToRunner(fields.args ?? [], machine);
+      if ((fields.app === "review" && fields.action === "send") || fields.app === "queue") {
+        if (typeof args[0] === "string") args[0] = toRunner(args[0],machine);
+      }
       const r = await cockpit(["hub", "act", fields.app, fields.action, JSON.stringify(args), ...(fields.armed ? ["--armed", fields.armed] : [])]);
       if (r.code !== 0) throw new Error(r.stderr.trim() || `${fields.app} ${fields.action} failed on ${machine}`);
       return JSON.parse(r.stdout);
@@ -318,9 +321,9 @@ export function subscribe(cx, { views = [], docs = [], notify = false, focus = n
                 if (r.code !== 0) throw new Error("could not write the desktop clipboard");
               },
             } : undefined;
-            const outcome = await runWindowCommand(message.window, {machine:remote,run,clipboard,
+            const outcome = await runWindowCommand(message.window, {machine:remote,run,clipboard,focus:focusHere,
               herdrApp: argv => exec("env", [`HERDR_APP_HOME=${appHome()}`, `${home()}/.local/bin/herdr-app`, ...argv])});
-            await windowReply(message.window.id, secret, outcome);
+            await windowReply(message.window.id, secret, message.window.capability, outcome);
             continue;
           }
           if (remote && message.focus) continue;
@@ -353,10 +356,10 @@ export function subscribe(cx, { views = [], docs = [], notify = false, focus = n
 }
 
 /** Answers a window command over TCP with the memory-only authority obtained through the runner shell. */
-async function windowReply(id, secret, outcome) {
+async function windowReply(id, secret, capability, outcome) {
   const {socket,token,lines} = await connect();
   try {
-    await socket.write(JSON.stringify({op:"window_reply",token,id,secret,...outcome}) + "\n");
+    await socket.write(JSON.stringify({op:"window_reply",token,id,secret,capability,...outcome}) + "\n");
     const answer = JSON.parse(await lines.next());
     if (answer.error) throw new Error(answer.error);
   } finally { close(socket); }

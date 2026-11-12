@@ -50,3 +50,12 @@ test("terminal.paste pastes text through the desktop clipboard and restores it",
   assert.deepEqual(f.clip,["Ship ENG-412","before"]);
   assert.deepEqual(f.calls.at(-1),["do","terminal.paste",'{"terminal":"runner/t3"}']);
 });
+test('tab.select is allowed only for a runner tab',async()=>{
+ const f=fixture();assert.ok((await runWindowCommand(command('tab.select',{id:'tab1'}),f.options)).value);
+ assert.ok((await runWindowCommand(command('tab.select',{id:'tab2'}),f.options)).error);
+});
+test('an authenticated item focus applies its full target locally',async()=>{
+ const f=fixture(),targets=[];
+ const result=await runWindowCommand(command('cockpit.focus',{target:{app:'runbook',key:'eng-412',steps:['2']}}),{...f.options,focus:target=>targets.push(target)});
+ assert.deepEqual(result,{value:{}});assert.deepEqual(targets,[{app:'runbook',key:'eng-412',steps:['2']}]);
+});

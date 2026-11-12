@@ -11,7 +11,7 @@ import { cacheDir, home } from './config'
 import { refreshMail } from './mail'
 import { CHANGES_SPEC, CHANGES_TOOL_FULL, HEALTH_SPEC, HEALTH_TOOL_FULL, READ_SPEC, READ_TOOL_FULL, SEARCH_SPEC, SEARCH_TOOL_FULL, changesArgs, find, healthArgs, readArgs, searchArgs } from './find'
 import { refreshLinks, refreshViews, renderFooter } from './footer'
-import { REPORT_SPEC, REPORT_TOOL_FULL, bindHandoff, recordRunbookOwner, reportStep, settleTurn } from './handoffs'
+import { REPORT_SPEC, REPORT_TOOL_FULL, bindHandoff, reportStep, settleTurn } from './handoffs'
 import { herdrHere, hereSoon, isBackgroundJob, pageContext, setBackground } from './herdr'
 import { refresh } from './inbox'
 import { refreshMeetings } from './meetings'
@@ -21,7 +21,7 @@ import { SHOW_SPEC, SHOW_TOOL_FULL, collectAnswers, commandsOf, isBlueprintFile,
 import { clearRows, closeIdleBrowsers, notifyFinished, reportSide, reportUsage } from './sidebar'
 import { checkUpdate, forget, heartbeat } from './upkeep'
 import { branchOf, seedWork, trackWork } from './work'
-import { noteRunbookWrite } from './runbooks'
+import { noteRunbookWrite, runbookSlug } from './runbooks'
 
 const links = atom({ plugin: 'cockpit', key: 'links' } as const, null)
 const sidePage = atom({ plugin: 'cockpit', key: 'sidePage' } as const, null)
@@ -133,16 +133,6 @@ export const register: Register = on => {
     return { text: `Added to the to-do list: ${text}` }
   })
 
-  // /runbook is the plugin's markdown command (commands/runbook.md), a prompt the engine runs itself.
-  // This hook only records which session ran it, the one the runbook app hands steps to.
-  on('command.run', { command: ['runbook', 'cockpit:runbook'] }, async ($, e, next) => {
-    const target = e.args.trim() || (await read($, ticket)) || ''
-    const here = await herdrHere($).catch(() => undefined)
-    if (/^[A-Za-z]+-\d+$/.test(target) && here) await recordRunbookOwner($, target, here.pane)
-    return next(e)
-  })
-    .catch(($, e, next) => next(e))
-
   on('tool.call', { tool: REPORT_TOOL_FULL }, async ($, e) => reportStep($, e as unknown as Record<string, unknown>))
   // It writes cockpit's own files and one runbook status cell, so it needs no permission prompt.
   on('tool.check', { tool: REPORT_TOOL_FULL }, async () => ({ decision: 'allow' }))
@@ -185,11 +175,18 @@ export const register: Register = on => {
   on('tool.check', { tool: [SEARCH_TOOL_FULL, CHANGES_TOOL_FULL, READ_TOOL_FULL, HEALTH_TOOL_FULL] }, async () => ({ decision: 'allow' }))
 
   on('tool.call', {tool:['Write','Edit']}, async ($,e,next) => {
-    const path=(e.input as {file_path?:unknown} | undefined)?.file_path
-    const existed=typeof path==='string' && await $.fs.stat(path).then(()=>true,()=>false)
+    const args=e as unknown as {file_path?:unknown;input?:{file_path?:unknown}}
+    const path=args.file_path ?? args.input?.file_path
+    if(typeof path!=='string' || !(await runbookSlug($,path))) return next(e)
+    const before=await $.fs.read(path).catch(()=>undefined)
+    const beforeStat=await $.fs.stat(path).catch(()=>undefined)
     const result=await next(e)
-    if(typeof path==='string' && await $.fs.stat(path).then(()=>true,()=>false)) {
-      await noteRunbookWrite($,path,existed).catch(()=>undefined)
+    const after=await $.fs.read(path).catch(()=>undefined)
+    const afterStat=await $.fs.stat(path).catch(()=>undefined)
+    const outcome=result as unknown as {isError?:boolean;error?:unknown;result?:{isError?:boolean;error?:unknown}}
+    const failed=outcome?.isError || outcome?.error || outcome?.result?.isError || outcome?.result?.error
+    if(!failed && after!==undefined && (before!==after || beforeStat?.mtimeMs!==afterStat?.mtimeMs)) {
+      await noteRunbookWrite($,path,before!==undefined).catch(()=>undefined)
     }
     return result
   })

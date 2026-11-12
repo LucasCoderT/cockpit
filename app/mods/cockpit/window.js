@@ -1,7 +1,7 @@
 // The desktop accepts a bounded set of runner commands and checks every terminal target against its machine.
 import { toRunner, toDesktop } from "./address.js";
 
-export const WINDOW_COMMANDS = new Set(["ls","status","pane.split","pane.focus","pane.zoom","pane.close","space.select","space.rename","tab.rename","tab.close","space.close","layout.switch","layout.select","terminal.paste","space.new","tab.new","terminal.open"]);
+export const WINDOW_COMMANDS = new Set(["ls","status","pane.split","pane.focus","pane.zoom","pane.close","space.select","space.rename","tab.rename","tab.select","tab.close","space.close","layout.switch","layout.select","terminal.paste","space.new","tab.new","terminal.open","cockpit.focus"]);
 
 function runnerValue(value, machine) {
   if (Array.isArray(value)) return value.map(v => runnerValue(v,machine));
@@ -9,7 +9,7 @@ function runnerValue(value, machine) {
   return Object.fromEntries(Object.entries(value).map(([key,v]) => [key,key === "terminal" && typeof v === "string" ? toRunner(v,machine) : runnerValue(v,machine)]));
 }
 
-export async function runWindowCommand(cmd, {machine,now=Date.now,herdrApp,run,clipboard}) {
+export async function runWindowCommand(cmd, {machine,now=Date.now,herdrApp,run,clipboard,focus}) {
   try {
     const expired = () => !Number.isFinite(cmd.deadline) || now() > cmd.deadline;
     if (expired()) return {error:"expired"};
@@ -17,6 +17,7 @@ export async function runWindowCommand(cmd, {machine,now=Date.now,herdrApp,run,c
     const cockpit = /^cockpit\.(go|panel-open):/.test(name ?? "");
     if (!WINDOW_COMMANDS.has(name) && !cockpit) return {error:`${name} is not a command this window runs for ${machine}`};
     if (!["do","ls","status"].includes(cmd.cmd)) return {error:"invalid window operation"};
+    if (name === "cockpit.focus") { await focus(cmd.args?.target); return {value:{}}; }
     if (cockpit) { await run(name); return {value:{}}; }
     const call = async argv => {
       const r = await herdrApp(argv);

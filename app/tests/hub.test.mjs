@@ -389,10 +389,10 @@ test("a window command line gets a window_reply with the secret", async t => {
   f.behavior.exec={code:0,stdout:'{"secret":"window-secret"}',stderr:""};
   const sub=f.hub.subscribe(r.cx,{views:["inbox"],notify:true,window:true},r.message,r.state);
   t.after(()=>sub.stop()); await until(()=>r.received.length===1);
-  for(const socket of f.clients) socket.write(JSON.stringify({window:{id:7,cmd:"do",command:"cockpit.panel-open:show:quota",args:{},deadline:Date.now()+10000}})+"\n");
+  for(const socket of f.clients) socket.write(JSON.stringify({window:{id:7,capability:"window-call-key",cmd:"do",command:"cockpit.panel-open:show:quota",args:{},deadline:Date.now()+10000}})+"\n");
   await until(()=>f.messages.some(m=>m.op==="window_reply"));
   const reply=f.messages.find(m=>m.op==="window_reply");
-  assert.equal(reply.id,7); assert.equal(reply.secret,"window-secret"); assert.deepEqual(reply.value,{});
+  assert.equal(reply.id,7); assert.equal(reply.secret,"window-secret"); assert.equal(reply.capability,"window-call-key"); assert.deepEqual(reply.value,{});
   assert.ok(f.calls.some(c=>c[0]==="run"&&c[1]==="cockpit.panel-open:show:quota"));
   sub.stop(); await Promise.all(r.tasks);
 });

@@ -18,8 +18,8 @@ export function toDesktop(address, machine) {
 }
 
 export function argsToRunner(value, machine) {
-  if (typeof value === "string") return /^(app:)?[^/\s:]+\/t\d+$/.test(value) ? toRunner(value, machine) : value;
-  if (Array.isArray(value)) return value.map(v => argsToRunner(v, machine));
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k,v]) => [k,argsToRunner(v,machine)]));
+  if (Array.isArray(value)) return value.map(v => argsToRunner(v,machine));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key,v]) =>
+    [key,["terminal","address","handle"].includes(key) && typeof v === "string" ? toRunner(v,machine) : argsToRunner(v,machine)]));
   return value;
 }

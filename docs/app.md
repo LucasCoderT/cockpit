@@ -90,7 +90,7 @@ terminals or tabs with matching IDs.
 
 Every app action, including runbook steps, to-do changes and confirmations, travels as
 `cockpit hub act <app> <action> <JSON args> [--armed <token>]` over Herdr's machine connection. That command
-hands it to the runner's hub on its unix socket and returns the full action response. Terminal handles retain
+hands it to the runner's hub on its unix socket and returns the full action response. Only address-bearing fields and the terminal positions of review/queue actions are translated; ordinary text and paths are preserved. Terminal handles retain
 `app:`: `app:runner/t7` reaches the hub as `app:t7`, while raw `runner/t7` reaches it as `t7`. Addresses of
 another machine are refused. Navigation and links open on the desktop.
 
@@ -102,11 +102,11 @@ The sidebar subscription also receives commands for the desktop window. It fetch
 `window_reply`. The hub keeps this secret only in memory; a restarted hub causes the mod to fetch it again.
 The latest connected window handles commands, each with a ten second deadline. Timed-out commands are never retried.
 
-The desktop accepts navigation, cockpit panel splits, renames and closes only for targets belonging to the runner;
+Server item navigation carries its full target through an authenticated `cockpit.focus` window command. The desktop accepts navigation (including owned `tab.select`), cockpit panel splits, renames and closes only for targets belonging to the runner;
 layout and cockpit panel commands operate on this cockpit window. `space.new` forces the runner machine.
 `terminal.open`, `tab.new` and splits with `argv` are refused until this desktop API's machine support can be
 verified. Text paste uses the desktop clipboard and restores its previous text. The only extra operation allowed
-over read-only TCP is `window_reply`, authenticated with the window secret and a live pending command id.
+over read-only TCP is `window_reply`, authenticated with the window secret and a live pending command id plus an unpredictable per-request capability sent only to the selected window. A different authorized window cannot answer that command.
 
 Desktop checks: `node --experimental-vm-modules --test app/tests/*.test.mjs`.
 

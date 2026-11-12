@@ -5,9 +5,10 @@
 
 import { div } from "gpui-kit";
 import { h_flex, v_flex, InputState } from "gpui-base";
-import { props, focused, panes, shared, settings } from "herdr";
+import { props, focused, panes, shared, settings, setShared, layout } from "herdr";
 import * as hub from "./hub.js";
 import { toRunner } from "./address.js";
+import { UpdateBadge, panelVisible } from "./updates.js";
 import {
   tokens, TEXT, RADIUS, Icon, Badge, Button, Kbd, ListRow, PageHeader, SearchField, TextField, KeyHints, Empty, ErrorState,
   Skeleton, Command, Toaster, Flashes, Scroller, Hover, Progress, Ring, Section, SidePanel, AlertDialog, Spinner, openMenu, alpha,
@@ -23,7 +24,7 @@ export function slugFor(books, agents, focusedTerminal, machine, pane) {
   };
   const terminal = handle(focusedTerminal);
   const row = agents.find(a => handle(a.terminal ?? a.address) === terminal);
-  const newest = found => found.slice().sort((a,b)=>String(b.updated ?? "").localeCompare(String(a.updated ?? "")))[0]?.slug ?? null;
+  const newest = found => found.slice().sort((a,b)=>(Number(b.owner?.at ?? 0)-Number(a.owner?.at ?? 0)) || String(b.updated ?? "").localeCompare(String(a.updated ?? "")))[0]?.slug ?? null;
   const owned = newest(books.filter(b=>b.owner?.terminal && handle(b.owner.terminal)===terminal));
   if (owned) return owned;
   const session = row?.session?.id ?? row?.session;
@@ -209,9 +210,18 @@ export default class Runbook {
     return (steps.find((s) => s.open) ?? steps[0])?.key ?? null;
   }
 
+  updateBadge() {
+    if (!this.panel) return;
+    this.updates ??= new UpdateBadge();
+    const count = this.updates.take((this.model?.books ?? []).map(b=>[b.slug,JSON.stringify(b)]),panelVisible(layout(),"runbook"));
+    const badge = count ? {count,tone:"info"} : null;
+    if (JSON.stringify(shared("badge.runbook") ?? null)!==JSON.stringify(badge)) setShared("badge.runbook",badge);
+  }
+
   take(model, cx) {
     const before = this.model;
     this.model = model;
+    this.updateBadge();
     if (!before) {
       const first = this.books().find((b) => b.todo > 0) ?? this.books()[0];
       this.slug = first?.slug ?? null;
@@ -1336,6 +1346,7 @@ export default class Runbook {
   }
 
   render(cx) {
+    this.updateBadge();
     const k = tokens();
     if (this.panel) return this.renderPanel(k, cx);
     const m = this.model;

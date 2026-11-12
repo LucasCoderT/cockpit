@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { answerText, blueprintName, collectAnswers, isBlueprintFile, viewError, present } from '../hooks/show'
+import { answerText, blueprintName, collectAnswers, isBlueprintFile, viewError, present, isViewOpen, refreshSources, toggleView } from '../hooks/show'
 import { SHOW_CASES } from './fixtures/show-cases'
 
 const HOME = '/home/me'
@@ -148,3 +148,19 @@ test('the herdr TUI still splits a pane',async()=>{
  const f=presentation();await present(f.$,'tui-quota',quotaSpec,{pane:'w1:p1',tab:'t1',space:'w1',frontend:'tui'})
  expect(f.calls.some(a=>a[0]==='herdr'&&a[2]==='split')).toBe(true)
 })
+
+test('Documents are live to source refresh and footer navigation without split markers',async()=>{
+ const f=presentation(),name='live-quota',at=Date.now();
+ f.$.session.id=async()=> 'acme-live';
+ f.files.set(`${DIR}/${name}.json`,JSON.stringify({...quotaSpec,at,session:'acme-live',terminal:'t14',blocks:[{type:'table',source:{metabase:{question:412}},columns:['old'],rows:[],refreshed_at:0}]}));
+ f.$.fs.list=async()=>[{name:`${name}.json`,kind:'file',size:1,mtimeMs:at,isLink:false}];
+ const original=f.$.process.run;
+ f.$.process.run=async (argv,options)=>argv.includes('shown') ? ran(0,JSON.stringify([{terminal:'t14',name}])) : original(argv,options);
+ f.$.mcp={call:async()=>({isError:false,content:[{type:'text',text:JSON.stringify({cols:[{name:'count'}],rows:[[42]]})}]})} as typeof f.$.mcp;
+ expect(await isViewOpen(f.$,name)).toBe(true);
+ await refreshSources(f.$,'acme-live');
+ expect(JSON.parse(f.files.get(`${DIR}/${name}.json`)!).blocks[0].rows).toEqual([[42]]);
+ await toggleView(f.$,name,appHere);
+ expect(f.calls.some(a=>a.includes(`cockpit.panel-open:show:${name}`))).toBe(true);
+ expect(f.calls.some(a=>a.includes('pane.split'))).toBe(false);
+});

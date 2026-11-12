@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 struct Pending {
     tx: Sender<Result<Value, WindowError>>,
     sub: u64,
+    capability: String,
     expires: Instant,
 }
 
@@ -34,9 +35,11 @@ pub fn call(cmd: &str, command: &str, args: &Value, timeout: Duration) -> Result
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     let (tx, rx) = channel();
     let mut waits = pending().lock().unwrap_or_else(|e| e.into_inner());
-    waits.insert(id, Pending { tx, sub, expires: Instant::now() + timeout });
+    let capability = crate::token().map_err(|error| WindowError::Failed(error.to_string()))?;
+    waits.insert(id, Pending { tx, sub, capability: capability.clone(), expires: Instant::now() + timeout });
     let deadline = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() + timeout.as_millis();
-    if sender.send(json!({"window":{"id":id,"cmd":cmd,"command":command,"args":args,"deadline":deadline as u64}}).to_string()).is_err() {
+    if sender.send(json!({"window":{"id":id,"cmd":cmd,"command":command,"args":args,"deadline":deadline as u64,"capability":capability}}).to_string()).is_err()
+    {
         waits.remove(&id);
         return Err(WindowError::NoWindow);
     }
@@ -46,12 +49,16 @@ pub fn call(cmd: &str, command: &str, args: &Value, timeout: Duration) -> Result
     answer
 }
 
-pub fn reply(id: u64, token: &str, outcome: Result<Value, String>) -> bool {
+pub fn reply(id: u64, token: &str, capability: &str, outcome: Result<Value, String>) -> bool {
     if token != secret() {
         return false;
     }
     let mut waits = pending().lock().unwrap_or_else(|e| e.into_inner());
-    let Some(wait) = waits.remove(&id) else { return false };
+    let Some(wait) = waits.get(&id) else { return false };
+    if capability != wait.capability {
+        return false;
+    }
+    let wait = waits.remove(&id).unwrap();
     if Instant::now() >= wait.expires {
         return false;
     }
@@ -78,7 +85,7 @@ mod tests {
         let sub = crate::views::subscribe(&json!({"notify":true,"window":true}), tx);
         assert_eq!(call("ls", "", &Value::Null, Duration::from_millis(5)), Err(WindowError::MayHaveRun));
         let command: Value = serde_json::from_str(&rx.recv().unwrap()).unwrap();
-        assert!(!reply(command["window"]["id"].as_u64().unwrap(), secret(), Ok(json!({}))));
+        assert!(!reply(command["window"]["id"].as_u64().unwrap(), secret(), command["window"]["capability"].as_str().unwrap(), Ok(json!({}))));
         crate::views::window_gone(sub);
     }
 }

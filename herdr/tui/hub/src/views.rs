@@ -292,7 +292,22 @@ fn keep(rx: Receiver<Dirty>) {
 pub fn shown(name: &str) -> Vec<Value> {
     let mut subs = subs();
     subs.retain(|s| s.tx.send(String::new()).is_ok());
-    subs.iter().flat_map(|s| s.views.iter().filter(|(n, _, _)| n == name).map(|(_, args, _)| args.clone())).collect()
+    subs.iter()
+        .flat_map(|s| {
+            s.views.iter().filter(|(n, _, _)| n == name).map(|(_, args, value)| {
+                let mut shown = args.clone();
+                if name == "show"
+                    && let Some(document) = value["view"]["name"].as_str()
+                {
+                    if !shown.is_object() {
+                        shown = json!({});
+                    }
+                    shown["name"] = json!(document);
+                }
+                shown
+            })
+        })
+        .collect()
 }
 
 /// Forgets the subscribers whose connection went (their channel closed).
@@ -303,6 +318,14 @@ pub fn prune() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn documents_panel_visibility_includes_the_selected_document() {
+        register(Def { name: "show", docs: &[], dirs: Vec::new, build: |_, _| json!({"view":{"name":"quota"}}), act: |_, _| None });
+        let (tx, _rx) = channel();
+        subscribe(&json!({"views":[{"name":"show","args":{"terminal":"t7","pick":null}}]}), tx);
+        assert_eq!(shown("show")[0]["name"], "quota");
+    }
 
     fn counter(args: &Value, doc: Doc) -> Value {
         json!({"args": args, "inbox": doc("nope")})

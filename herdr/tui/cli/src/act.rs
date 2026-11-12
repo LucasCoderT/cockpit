@@ -74,8 +74,10 @@ fn runner_act(args: &[String]) -> Result<Value, String> {
     let parsed: Vec<Value> = serde_json::from_str(list).map_err(|_| format!("{app} {action} takes a JSON list of arguments"))?;
     check_runner_args(app, action, &parsed)?;
     let env = json!({"HERDR_PANE_ID": std::env::var("HERDR_PANE_ID").unwrap_or_default()});
-    let answer =
-        cockpit_core::hub::request_raw(&json!({"op":"act","app":app,"action":action,"args":parsed,"armed":armed,"env":env}), Duration::from_secs(120))?;
+    let answer = cockpit_core::hub::request_raw(
+        &json!({"op":"act","app":app,"action":action,"args":parsed,"armed":armed,"env":env,"frontend":cockpit_core::frontend::current().name()}),
+        Duration::from_secs(120),
+    )?;
     if answer["unknown"] == true {
         return Err(format!("the cockpit hub has no {app} action {action}"));
     }

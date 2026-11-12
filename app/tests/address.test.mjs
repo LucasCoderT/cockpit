@@ -17,5 +17,10 @@ test("terminal addresses preserve raw and app handle forms", () => {
 test("action arguments translate nested terminal addresses and preserve ordinary text", () => {
   assert.deepEqual(argsToRunner([{terminal:"app:runner/t7",next:{terminal:"runner/t9"},text:"see runner/t7 later"}],"runner"),
     [{terminal:"app:t7",next:{terminal:"t9"},text:"see runner/t7 later"}]);
-  assert.throws(() => argsToRunner(["other/t7"],"runner"), /another machine/);
+  assert.throws(() => argsToRunner([{terminal:"other/t7"}],"runner"), /another machine/);
+});
+test('address-shaped ordinary text and paths are not terminal references',()=>{
+ assert.deepEqual(argsToRunner([{text:'runner/t7',path:'api/t7',terminal:'app:runner/t7'}],'runner'),
+  [{text:'runner/t7',path:'api/t7',terminal:'app:t7'}]);
+ assert.deepEqual(argsToRunner(['runner/t7','api/t7'],'runner'),['runner/t7','api/t7']);
 });

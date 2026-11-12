@@ -823,3 +823,14 @@ fn hub_window_token_prints_the_secret() {
     assert_eq!(out.status.code(), Some(0));
     assert_eq!(serde_json::from_str::<Value>(&stdout(&out)).unwrap(), json!({"secret":"acme-secret"}));
 }
+
+#[test]
+fn hub_act_carries_the_callers_frontend_to_an_existing_hub() {
+    let sandbox = Sandbox::new();
+    let seen = fake_hub(&sandbox, Some(json!({"note":"done"})));
+    assert_eq!(
+        sandbox.cockpit(&["hub", "act", "agents", "fork", r#"[{"terminal":"app:t7","place":"space"}]"#], &[("COCKPIT_FRONTEND", "app")]).status.code(),
+        Some(0)
+    );
+    assert_eq!(seen.lock().unwrap()[0]["frontend"], "app");
+}

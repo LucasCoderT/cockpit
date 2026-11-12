@@ -8,6 +8,7 @@ import { h_flex, v_flex, v_virtual_list, Scrollbar, InputState, Input, TextView 
 import { exec, appHome, focused, panes, run, layout, shared, setShared, props, settings, window as win } from "herdr";
 import * as hub from "./hub.js";
 import { toRunner } from "./address.js";
+import { UpdateBadge, panelVisible } from "./updates.js";
 import { tokens, alpha, TEXT, RADIUS, Icon, Badge, Button, Kbd, Empty, Toaster, Progress, Spinner, openMenu, dur } from "./ui.js";
 import { Chart, Figures, zoomed, compact } from "./plot.js";
 import { parseFlowchart, flowGraph, laidOut, Graph, graphSize, Sequence, sequenceSize, fit } from "./diagram.js";
@@ -143,6 +144,18 @@ export default class Show {
     );
   }
 
+  updateBadge() {
+    if (!this.panel) return;
+    this.updates ??= new UpdateBadge();
+    const entries = new Map((this.data?.views ?? []).map(v=>[v.name,String(v.at)]));
+    const view = this.data?.view;
+    if (view) entries.set(view.name,JSON.stringify(view));
+    const changed = this.updates.take(entries,panelVisible(layout(),"show"));
+    const asks = (this.data?.views ?? []).reduce((n,v)=>n+(v.asks ?? 0),0);
+    const badge = changed+asks ? {count:changed+asks,tone:asks?"warning":"info"} : null;
+    if (JSON.stringify(shared("badge.show") ?? null)!==JSON.stringify(badge)) setShared("badge.show",badge);
+  }
+
   take(value, cx) {
     const before = this.data?.view;
     this.data = value;
@@ -163,11 +176,7 @@ export default class Show {
       if (b.type === "image" && b.src) this.ensure(b.src, cx);
       if (b.type === "compare") [b.before, b.after].forEach((s) => s && this.ensure(s, cx));
     }
-    if (this.panel) {
-      const asks = (value.views ?? []).reduce((n, v) => n + (v.asks ?? 0), 0);
-      const badge = asks ? { count: asks, tone: "warning" } : null;
-      if (JSON.stringify(shared("badge.show") ?? null) !== JSON.stringify(badge)) setShared("badge.show", badge);
-    }
+    this.updateBadge();
   }
 
   view() {
@@ -547,6 +556,7 @@ export default class Show {
   // Drawing
 
   render(cx) {
+    this.updateBadge();
     const k = tokens();
     if (this.panel) {
       const f = focused();

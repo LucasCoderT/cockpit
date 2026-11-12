@@ -3,8 +3,9 @@ import {readFile,readdir} from 'node:fs/promises';
 import {createContext,SourceTextModule,SyntheticModule} from 'node:vm';
 import {test} from 'node:test';
 async function fixture() {
+ const state={}, view={tree:{id:"panel",hidden:true,children:[{id:"panel-body",active:"review"}]}};
  const calls=[],context=createContext({console}),sources=new Map(),modules=new Map();
- const imports={herdr:{},'./hub.js':{subscribe:(_cx,opts)=>{calls.push(opts);return {stop(){}}},install:async()=>({machine:'runner'})}};
+ const imports={herdr:{shared:key=>state[key],setShared:(key,value)=>{state[key]=value},layout:()=>view.tree},'./hub.js':{subscribe:(_cx,opts)=>{calls.push(opts);return {stop(){}}},install:async()=>({machine:'runner'})}};
  const folder=new URL('../mods/cockpit/',import.meta.url);
  for(const name of await readdir(folder)) {
   if(!name.endsWith('.js'))continue;
@@ -18,8 +19,8 @@ async function fixture() {
   const module=native?new SyntheticModule(Object.keys(native),function(){for(const[k,v]of Object.entries(native))this.setExport(k,v)},{context}):new SourceTextModule(sources.get(name),{context,identifier:name});
   modules.set(name,module);return module;
  }
- const module=new SourceTextModule('export {slugFor} from "./runbook.js"; export {default as Show} from "./show.js";',{context});
- await module.link(load);await module.evaluate();return {mod:module.namespace,calls};
+ const module=new SourceTextModule('export {default as Runbook,slugFor} from "./runbook.js"; export {default as Show} from "./show.js";',{context});
+ await module.link(load);await module.evaluate();return {mod:module.namespace,calls,state,view};
 }
 const books=[{slug:'eng-412',owner:{terminal:'app:t7',session:'acme-one'},updated:'2026-11-12 10:00'},
  {slug:'adr-notes',owner:{terminal:'app:t9',session:'acme-two'},updated:'2026-11-12 11:00'}];
@@ -42,4 +43,27 @@ test('Documents subscribes with the runner terminal address',async()=>{
  const {mod,calls}=await fixture(),show=new mod.Show();
  Object.assign(show,{panel:true,terminal:'runner/t7',machine:'runner',pick:null});
  show.subscribe({});assert.equal(calls[0].views[0].args.terminal,'t7');
+});
+test('last owner write wins over the runbooks editable updated field',async()=>{
+ const {mod}=await fixture();assert.equal(mod.slugFor([
+  {slug:'old-date',owner:{terminal:'app:t7',at:200},updated:'2020-01-01'},
+  {slug:'new-date',owner:{terminal:'app:t7',at:100},updated:'2030-01-01'}],[],'t7',null,{}),'old-date');
+});
+
+
+test('hidden Documents updates set a badge that clears when the tab is viewed',async()=>{
+ const f=await fixture(),show=new f.mod.Show();show.panel=true;
+ show.data={views:[{name:'quota',at:1}],view:{name:'quota',at:1,blocks:[]}};show.updateBadge();
+ show.data={views:[{name:'quota',at:2}],view:{name:'quota',at:2,blocks:[]}};show.updateBadge();
+ assert.equal(f.state['badge.show'].count,1);
+ f.view.tree.hidden=false;f.view.tree.children[0].active='show';show.updateBadge();
+ assert.equal(f.state['badge.show'],null);
+});
+test('hidden Runbook updates set a badge that clears when the tab is viewed',async()=>{
+ const f=await fixture(),book=new f.mod.Runbook();book.panel=true;
+ book.model={books:[{slug:'eng-412',steps:[{n:'1',open:true}]}]};book.updateBadge();
+ book.model={books:[{slug:'eng-412',steps:[{n:'1',open:false}]}]};book.updateBadge();
+ assert.equal(f.state['badge.runbook'].count,1);
+ f.view.tree.hidden=false;f.view.tree.children[0].active='runbook-panel';book.updateBadge();
+ assert.equal(f.state['badge.runbook'],null);
 });
