@@ -53,16 +53,16 @@ test('last owner write wins over the runbooks editable updated field',async()=>{
 
 test('hidden Documents updates set a badge that clears when the tab is viewed',async()=>{
  const f=await fixture(),show=new f.mod.Show();show.panel=true;
- show.data={views:[{name:'quota',at:1}],view:{name:'quota',at:1,blocks:[]}};show.updateBadge();
- show.data={views:[{name:'quota',at:2}],view:{name:'quota',at:2,blocks:[]}};show.updateBadge();
+ show.data={views:[{name:'quota',at:1}],view:{name:'quota',at:1,blocks:[]}};show.updateBadge(true);
+ show.data={views:[{name:'quota',at:2}],view:{name:'quota',at:2,blocks:[]}};show.updateBadge(true);
  assert.equal(f.state['badge.show'].count,1);
  f.view.tree.hidden=false;f.view.tree.children[0].active='show';show.updateBadge();
  assert.equal(f.state['badge.show'],null);
 });
 test('hidden Runbook updates set a badge that clears when the tab is viewed',async()=>{
  const f=await fixture(),book=new f.mod.Runbook();book.panel=true;
- book.model={books:[{slug:'eng-412',steps:[{n:'1',open:true}]}]};book.updateBadge();
- book.model={books:[{slug:'eng-412',steps:[{n:'1',open:false}]}]};book.updateBadge();
+ book.model={books:[{slug:'eng-412',steps:[{n:'1',open:true}]}]};book.updateBadge(true);
+ book.model={books:[{slug:'eng-412',steps:[{n:'1',open:false}]}]};book.updateBadge(true);
  assert.equal(f.state['badge.runbook'].count,1);
  f.view.tree.hidden=false;f.view.tree.children[0].active='runbook-panel';book.updateBadge();
  assert.equal(f.state['badge.runbook'],null);
@@ -70,8 +70,8 @@ test('hidden Runbook updates set a badge that clears when the tab is viewed',asy
 test('an unselected blueprint revision lights the Documents badge without changing the selected document',async()=>{
  const f=await fixture(),show=new f.mod.Show();show.panel=true;
  const selected={name:'quota',at:2,blocks:[]};
- show.data={views:[{name:'quota',at:2,revision:'quota-1'},{name:'blueprint',at:1,revision:'plan-1'}],view:selected};show.updateBadge();
- show.data={views:[{name:'quota',at:2,revision:'quota-1'},{name:'blueprint',at:1,revision:'plan-2'}],view:selected};show.updateBadge();
+ show.data={views:[{name:'quota',at:2,revision:'quota-1'},{name:'blueprint',at:1,revision:'plan-1'}],view:selected};show.updateBadge(true);
+ show.data={views:[{name:'quota',at:2,revision:'quota-1'},{name:'blueprint',at:1,revision:'plan-2'}],view:selected};show.updateBadge(true);
  assert.equal(f.state['badge.show'].count,1);
  assert.equal(show.data.view.name,'quota');
 });
@@ -92,4 +92,20 @@ test('a stopped Documents subscription cannot restore the previously focused age
  show.subscribe(cx);show.terminal='t7';show.subscribe(cx);
  f.callbacks[0]({view:'show',value:{view:{name:'old',blocks:[]}}},cx);
  assert.equal(show.data,null);
+});
+
+test('unchanged models and visibility changes reuse cached badge fingerprints',async()=>{
+ for(const kind of ['Show','Runbook']) {
+  const f=await fixture(),panel=new f.mod[kind]();panel.panel=true;
+  let serializations=0;
+  const content={toJSON(){serializations++;return {text:'ENG-412'};}};
+  if(kind==='Show')panel.data={views:[{name:'quota',at:1}],view:{name:'quota',blocks:[content]}};
+  else panel.model={books:[{slug:'eng-412',steps:[content]}]};
+  panel.updateBadge(true);assert.ok(serializations>0);
+  const initial=serializations;
+  for(let i=0;i<10;i++)panel.updateBadge();
+  f.view.tree.hidden=false;f.view.tree.children[0].active=kind==='Show'?'show':'runbook-panel';
+  panel.updateBadge();assert.equal(serializations,initial);
+  panel.updateBadge(true);assert.ok(serializations>initial);
+ }
 });

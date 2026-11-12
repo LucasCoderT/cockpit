@@ -18,7 +18,7 @@ use crate::table::{self, Column};
 
 /// The folders the view reads: the runbooks and the sessions' handoffs.
 pub fn dirs() -> Vec<PathBuf> {
-    vec![book::dir(), handoff::dir(), files::cache(), files::cache().join("runbook-owners")]
+    vec![book::dir(), handoff::dir(), files::cache().join("runbook-owners")]
 }
 
 pub fn view(_args: &Value, doc: &dyn Fn(&str) -> Value) -> Value {

@@ -210,10 +210,14 @@ export default class Runbook {
     return (steps.find((s) => s.open) ?? steps[0])?.key ?? null;
   }
 
-  updateBadge() {
+  updateBadge(modelChanged = false) {
     if (!this.panel) return;
+    const visible = panelVisible(layout(),"runbook");
+    if (!modelChanged && this.badgeVisible === visible) return;
+    this.badgeVisible = visible;
     this.updates ??= new UpdateBadge();
-    const count = this.updates.take((this.model?.books ?? []).map(b=>[b.slug,JSON.stringify(b)]),panelVisible(layout(),"runbook"));
+    if (modelChanged) this.badgeEntries = (this.model?.books ?? []).map(b=>[b.slug,JSON.stringify(b)]);
+    const count = this.updates.take(this.badgeEntries ?? [],visible);
     const badge = count ? {count,tone:"info"} : null;
     if (JSON.stringify(shared("badge.runbook") ?? null)!==JSON.stringify(badge)) setShared("badge.runbook",badge);
   }
@@ -221,7 +225,7 @@ export default class Runbook {
   take(model, cx) {
     const before = this.model;
     this.model = model;
-    this.updateBadge();
+    this.updateBadge(true);
     if (!before) {
       const first = this.books().find((b) => b.todo > 0) ?? this.books()[0];
       this.slug = first?.slug ?? null;

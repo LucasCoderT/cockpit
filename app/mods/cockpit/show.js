@@ -138,7 +138,7 @@ export default class Show {
       this.pick = null;
       this.pendingGo = null;
       this.status = `error: ${error?.message ?? error}`;
-      this.updateBadge();
+      this.updateBadge(true);
       cx.notify?.();
       return;
     }
@@ -159,14 +159,20 @@ export default class Show {
     );
   }
 
-  updateBadge() {
+  updateBadge(modelChanged = false) {
     if (!this.panel) return;
+    const visible = panelVisible(layout(),"show");
+    if (!modelChanged && this.badgeVisible === visible) return;
+    this.badgeVisible = visible;
     this.updates ??= new UpdateBadge();
-    const entries = new Map((this.data?.views ?? []).map(v=>[v.name,String(v.revision ?? v.at)]));
-    const view = this.data?.view;
-    if (view && !(this.data?.views ?? []).find(v=>v.name===view.name)?.revision) entries.set(view.name,JSON.stringify(view));
-    const changed = this.updates.take(entries,panelVisible(layout(),"show"));
-    const asks = (this.data?.views ?? []).reduce((n,v)=>n+(v.asks ?? 0),0);
+    if (modelChanged) {
+      this.badgeEntries = new Map((this.data?.views ?? []).map(v=>[v.name,String(v.revision ?? v.at)]));
+      const view = this.data?.view;
+      if (view && !(this.data?.views ?? []).find(v=>v.name===view.name)?.revision) this.badgeEntries.set(view.name,JSON.stringify(view));
+      this.badgeAsks = (this.data?.views ?? []).reduce((n,v)=>n+(v.asks ?? 0),0);
+    }
+    const changed = this.updates.take(this.badgeEntries ?? [],visible);
+    const asks = this.badgeAsks ?? 0;
     const badge = changed+asks ? {count:changed+asks,tone:asks?"warning":"info"} : null;
     if (JSON.stringify(shared("badge.show") ?? null)!==JSON.stringify(badge)) setShared("badge.show",badge);
   }
@@ -174,6 +180,7 @@ export default class Show {
   take(value, cx) {
     const before = this.data?.view;
     this.data = value;
+    this.updateBadge(true);
     const view = value?.view;
     if (!view) return;
     if (!before || before.name !== view.name || before.at !== view.at) {
@@ -191,7 +198,6 @@ export default class Show {
       if (b.type === "image" && b.src) this.ensure(b.src, cx);
       if (b.type === "compare") [b.before, b.after].forEach((s) => s && this.ensure(s, cx));
     }
-    this.updateBadge();
   }
 
   view() {
