@@ -21,6 +21,9 @@ async function fixture(t, remote = true, globals = {}, host = "127.0.0.1") {
         messages.push(request);
         if (behavior.silent) continue;
         if (request.token !== behavior.token) socket.end('{"error":"a request on TCP needs hub.json\'s token"}\n');
+        else if (request.op === "subscribe" && request.window && behavior.refuseWindow > 0) {
+          behavior.refuseWindow--; socket.end('{"error":"this window secret is not the hub\'s: ask again"}\n');
+        }
         else if (request.op === "subscribe") socket.write(JSON.stringify({ view: typeof request.views[0] === "string" ? request.views[0] : request.views[0].name, value: { tickets: behavior.tickets } }) + "\n");
         else socket.write(JSON.stringify(request.op === "ping" ? { ok: true } : { value: { tickets: behavior.tickets } }) + "\n");
       }
@@ -35,6 +38,7 @@ async function fixture(t, remote = true, globals = {}, host = "127.0.0.1") {
   const imports = {
     herdr: {
       appHome: () => "C:/Herdr",
+      home: () => "C:/Users/Sam",
       window: () => ({ platform: "windows", active: true }),
       run: (...args) => calls.push(["run", ...args]),
       readTextFile: async (path, options) => {
@@ -43,7 +47,7 @@ async function fixture(t, remote = true, globals = {}, host = "127.0.0.1") {
         assert.equal(options?.on, install.machine);
         return JSON.stringify(info);
       },
-      exec: async (...args) => { calls.push(["exec", ...args]); return behavior.exec ?? { code: 0, stdout: JSON.stringify({ ...info, token: behavior.token }), stderr: "" }; },
+      exec: async (...args) => { calls.push(["exec", ...args]); return (typeof behavior.exec === "function" ? behavior.exec(...args) : behavior.exec) ?? { code: 0, stdout: JSON.stringify({ ...info, token: behavior.token }), stderr: "" }; },
     },
     net: { default: { connect: async (host, port) => {
       calls.push(["connect", host, port]);
@@ -356,4 +360,39 @@ test("a notification that needs the runner's own terminals says so", async t => 
   const f = await fixture(t);
   await assert.rejects(f.hub.cockpit(["focus", "herdr-app:workspace:s1"]), /read-only/);
   await assert.rejects(f.hub.cockpit(["focus", "herdr-app:resume"]), /read-only/);
+});
+
+test("a remote window subscription asks for the window secret first", async t => {
+  const f=await fixture(t), r=runtime(t);
+  f.behavior.exec={code:0,stdout:'{"secret":"window-secret"}',stderr:""};
+  const sub=f.hub.subscribe(r.cx,{views:["inbox"],notify:true,window:true},r.message,r.state);
+  t.after(()=>sub.stop()); await until(()=>r.received.length===1);
+  assert.ok(f.calls.find(c=>c[0]==="exec"&&c[2].includes("window-token")));
+  assert.equal(f.messages.find(m=>m.op==="subscribe").window_secret,"window-secret");
+  sub.stop(); await Promise.all(r.tasks);
+});
+
+
+test("a refused window secret is asked again and the subscription retried", async t => {
+  const f=await fixture(t), r=runtime(t);
+  f.behavior.refuseWindow=1;
+  f.behavior.exec={code:0,stdout:'{"secret":"new-window-secret"}',stderr:""};
+  const sub=f.hub.subscribe(r.cx,{views:["inbox"],notify:true,window:true},r.message,r.state);
+  t.after(()=>sub.stop()); await until(()=>r.received.length===1);
+  assert.equal(f.calls.filter(c=>c[0]==="exec"&&c[2].includes("window-token")).length,2);
+  assert.equal(f.messages.filter(m=>m.op==="subscribe").length,2);
+  sub.stop(); await Promise.all(r.tasks);
+});
+
+test("a window command line gets a window_reply with the secret", async t => {
+  const f=await fixture(t), r=runtime(t);
+  f.behavior.exec={code:0,stdout:'{"secret":"window-secret"}',stderr:""};
+  const sub=f.hub.subscribe(r.cx,{views:["inbox"],notify:true,window:true},r.message,r.state);
+  t.after(()=>sub.stop()); await until(()=>r.received.length===1);
+  for(const socket of f.clients) socket.write(JSON.stringify({window:{id:7,cmd:"do",command:"cockpit.panel-open:show:quota",args:{},deadline:Date.now()+10000}})+"\n");
+  await until(()=>f.messages.some(m=>m.op==="window_reply"));
+  const reply=f.messages.find(m=>m.op==="window_reply");
+  assert.equal(reply.id,7); assert.equal(reply.secret,"window-secret"); assert.deepEqual(reply.value,{});
+  assert.ok(f.calls.some(c=>c[0]==="run"&&c[1]==="cockpit.panel-open:show:quota"));
+  sub.stop(); await Promise.all(r.tasks);
 });

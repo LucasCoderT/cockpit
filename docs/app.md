@@ -97,6 +97,17 @@ another machine are refused. Navigation and links open on the desktop.
 TCP has no TLS: use an encrypted private network such as Tailscale, and keep `hub.json` private. A hub listening
 off loopback answers reads only, whoever holds the token. Actions use the existing shell connection to the machine.
 
+The sidebar subscription also receives commands for the desktop window. It fetches a separate window secret with
+`cockpit hub window-token` through Herdr's shell connection and uses it in `subscribe {window:true}` and
+`window_reply`. The hub keeps this secret only in memory; a restarted hub causes the mod to fetch it again.
+The latest connected window handles commands, each with a ten second deadline. Timed-out commands are never retried.
+
+The desktop accepts navigation, cockpit panel splits, renames and closes only for targets belonging to the runner;
+layout and cockpit panel commands operate on this cockpit window. `space.new` forces the runner machine.
+`terminal.open`, `tab.new` and splits with `argv` are refused until this desktop API's machine support can be
+verified. Text paste uses the desktop clipboard and restores its previous text. The only extra operation allowed
+over read-only TCP is `window_reply`, authenticated with the window secret and a live pending command id.
+
 Desktop checks: `node --experimental-vm-modules --test app/tests/*.test.mjs`.
 
 ## Window-wide plumbing (the sidebar copy owns it)

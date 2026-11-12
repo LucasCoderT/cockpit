@@ -2,8 +2,9 @@
 // connection, and subscriptions that come back by themselves when the hub restarts.
 
 import net from "net";
-import { exec, appHome, readTextFile, run, window as win } from "herdr";
+import { exec, appHome, readTextFile, run, window as win, home } from "herdr";
 import { argsToRunner } from "./address.js";
+import { runWindowCommand } from "./window.js";
 
 /** Closes a socket, already closed or not: a throw here would end the subscription that is tidying up. */
 const close = (socket) => {
@@ -29,7 +30,7 @@ function localShow(app) {
   return { ok: true };
 }
 
-function localFocus(target) {
+export function focusHere(target) {
   if (!APPS.has(target?.app)) throw new Error(READ_ONLY);
   const focus = (globalThis.cockpitRemoteFocus ??= { targets: new Map(), listeners: new Set() });
   focus.targets.set(target.app, target);
@@ -180,7 +181,7 @@ export async function cockpit(args) {
         return { code: 0, stdout: "", stderr: "" };
       }
       const step = key.indexOf(":");
-      localFocus(app === "runbook"
+      focusHere(app === "runbook"
         ? { app, key: step < 0 ? key : key.slice(0, step), steps: step < 0 ? [] : key.slice(step + 1).split(",").filter(Boolean) }
         : { app: { meeting: "meetings", routine: "routines" }[app] ?? app, key });
       return { code: 0, stdout: "", stderr: "" };
@@ -200,7 +201,7 @@ export async function request(op, fields = {}) {
   }
   const { machine } = await install();
   if (machine) {
-    if (op === "go") return localFocus(fields.target);
+    if (op === "go") return focusHere(fields.target);
     if (op === "act") {
       const args = argsToRunner(fields.args ?? [], machine);
       const r = await cockpit(["hub", "act", fields.app, fields.action, JSON.stringify(args), ...(fields.armed ? ["--armed", fields.armed] : [])]);
@@ -253,7 +254,7 @@ export const history = async (kind, key) => (await request("history", { kind, ke
  *
  *   subscribe(cx, { views: ["todo"] }, (m, cx) => { this.model = m.value; cx.notify(); });
  */
-export function subscribe(cx, { views = [], docs = [], notify = false, focus = null }, onMessage, onState = () => {}) {
+export function subscribe(cx, { views = [], docs = [], notify = false, focus = null, window: windowCommands = false }, onMessage, onState = () => {}) {
   const state = { stopped: false };
   const navigation = (globalThis.cockpitRemoteFocus ??= { targets: new Map(), listeners: new Set() });
   const ready = new Set();
@@ -274,7 +275,14 @@ export function subscribe(cx, { views = [], docs = [], notify = false, focus = n
         const { socket, token, lines, remote } = await connect(state);
         state.socket = socket;
         if (state.stopped) break;
-        await socket.write(JSON.stringify({ op: "subscribe", token, views, docs, notify }) + "\n");
+        let secret;
+        if (remote && windowCommands) {
+          const result = await cockpit(["hub","window-token"]);
+          if (result.code !== 0) throw new Error(result.stderr?.trim() || "could not get the window secret");
+          secret = JSON.parse(result.stdout).secret;
+          if (typeof secret !== "string" || !secret) throw new Error("the hub sent no window secret");
+        }
+        await socket.write(JSON.stringify({ op: "subscribe", token, views, docs, notify, ...(secret ? {window:true,window_secret:secret} : {}) }) + "\n");
         onState("live", cx);
         wait = 250;
         for (;;) {
@@ -297,6 +305,24 @@ export function subscribe(cx, { views = [], docs = [], notify = false, focus = n
           if (!line.trim()) continue;
           const message = JSON.parse(line);
           if (message.error) throw new Error(message.error);
+          if (message.window && secret) {
+            const clipboard = win()?.platform === "macos" ? {
+              wait: () => sleep(cx,800),
+              read: async () => {
+                const r = await exec("pbpaste", []);
+                if (r.code !== 0) throw new Error("could not read the desktop clipboard");
+                return r.stdout;
+              },
+              write: async text => {
+                const r = await exec("sh", ["-c", 'printf %s "$1" | pbcopy', "sh", text]);
+                if (r.code !== 0) throw new Error("could not write the desktop clipboard");
+              },
+            } : undefined;
+            const outcome = await runWindowCommand(message.window, {machine:remote,run,clipboard,
+              herdrApp: argv => exec("env", [`HERDR_APP_HOME=${appHome()}`, `${home()}/.local/bin/herdr-app`, ...argv])});
+            await windowReply(message.window.id, secret, outcome);
+            continue;
+          }
           if (remote && message.focus) continue;
           if (remote && message.view === "agents") message.value = { ...message.value, remote };
           onMessage(message, cx);
@@ -324,4 +350,14 @@ export function subscribe(cx, { views = [], docs = [], notify = false, focus = n
       close(state.socket);
     },
   };
+}
+
+/** Answers a window command over TCP with the memory-only authority obtained through the runner shell. */
+async function windowReply(id, secret, outcome) {
+  const {socket,token,lines} = await connect();
+  try {
+    await socket.write(JSON.stringify({op:"window_reply",token,id,secret,...outcome}) + "\n");
+    const answer = JSON.parse(await lines.next());
+    if (answer.error) throw new Error(answer.error);
+  } finally { close(socket); }
 }
