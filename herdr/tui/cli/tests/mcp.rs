@@ -233,3 +233,31 @@ fn any_agent_reads_any_tool_through_cockpit() {
     assert_eq!(rows["columns"][0], "time");
     assert!(rows["rows"].as_array().is_some_and(|r| !r.is_empty()));
 }
+
+#[test]
+fn show_in_the_app_opens_documents_for_a_new_view() {
+    let sandbox = Sandbox::new();
+    let bin = sandbox.root.join("bin/herdr-app");
+    executable(
+        &bin,
+        &format!(
+            r#"#!/bin/sh
+printf '%s\n' "$*" >> '{}'
+if [ "$1" = ls ]; then
+  printf '%s\n' '{{"spaces":[{{"id":"s1","tabs":[{{"id":"tab1","terminals":[{{"terminal":"t14","pane":"p14"}}]}}]}}]}}'
+else
+  printf '%s\n' '{{"pane":"p9"}}'
+fi
+"#,
+            sandbox.log().display()
+        ),
+    );
+    let mut server = Server::start(&sandbox, &[("HC_TERMINAL_ID", "t14"), ("HERDR_APP_BIN", bin.to_str().unwrap())]);
+    let args = json!({"name":"show","arguments":{"pane":"quota","title":"Quota","blocks":[{"type":"markdown","text":"ENG-412"}]}});
+    let shown = server.ask("tools/call", args.clone());
+    assert_eq!(shown["result"]["content"][0]["text"], "Opened quota in Documents beside this session.");
+    assert!(sandbox.calls().iter().any(|c| c.starts_with("do cockpit.panel-open:show:quota")));
+    let before = sandbox.calls().iter().filter(|c| c.starts_with("do ")).count();
+    assert_eq!(server.ask("tools/call", args)["result"]["content"][0]["text"], "Updated quota in Documents.");
+    assert_eq!(sandbox.calls().iter().filter(|c| c.starts_with("do ")).count(), before);
+}

@@ -1,8 +1,10 @@
 # The `show` tool
 
-An agent draws results in a pane beside the session with `show`: charts, tables, diagrams, diffs, logs, pictures
+An agent draws results beside the session with `show`: charts, tables, diagrams, diffs, logs, pictures
 and questions, rendered natively by herdr and the Herdr app. It is the reason cockpit holds back hand-written HTML
 pages and claude.ai artifacts — those are the fallback, for what no block can draw.
+
+In the Herdr app, new views and blueprints open in the Documents tab beside the agent. Updating a view leaves the current tab selected. The herdr TUI uses separate panes.
 
 This is the reference. The tool's own description carries the same ground, and its errors name the exact rule a
 call broke, so you can also learn it by calling it.
@@ -21,9 +23,9 @@ call broke, so you can also learn it by calling it.
 - **`pane`** — a short name of lowercase letters, digits and dashes. The same name updates the same pane, so a
   view can be redrawn as the work moves.
 - **`title`** — optional, above the blocks.
-- **`placement`** — `right` (the default), `down`, `zoomed`, or `browser`. `browser` draws the view as a web page
+- **`placement`** — `right` (the default, Documents in the app), `down`, `zoomed`, or `browser`. `down` and `zoomed` explicitly request a separate pane. `browser` draws the view as a web page
   beside the session at full resolution: use it for tables too wide for a pane, big diagrams, pictures and
-  side-by-side diffs. It takes only the blocks marked *page* below, with their data given in the call.
+  side-by-side diffs. It takes only the blocks marked *page* below, with their data given in the call. Without a browser beside the session, including on a remote desk, the app renders those blocks in Documents instead.
 - **`blocks`** — one or more of the following. Every block also takes a `title`.
 
 ## The blocks

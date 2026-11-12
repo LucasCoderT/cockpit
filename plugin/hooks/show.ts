@@ -12,8 +12,7 @@ import { MCP } from './tools'
 
 type $ = EngineInterface
 
-// The show tool: a view built from a fixed catalog of blocks, drawn in a pane split from the session's: `cockpit show`
-// in herdr, the cockpit mod's show view in the Herdr app.
+// The show tool draws a fixed catalog of blocks beside the session: a pane in herdr, Documents in the Herdr app.
 // A later call with the same pane name rewrites the view and the open pane redraws.
 const SHOW = MCP.tools.show
 export const SHOW_TOOL = SHOW.name
@@ -306,7 +305,7 @@ export async function writeSpec($: $, name: string, spec: Spec) {
 }
 
 // A browser view: its page written beside the spec, then opened beside the session, or reloaded where it is open.
-async function presentPage($: $, name: string, spec: Spec) {
+async function presentPage($: $, name: string, spec: Spec, here: Here | undefined, existed: boolean) {
   const patches = new Map<number, string>()
   for (const [n, b] of spec.blocks.entries()) {
     if (b.type !== 'diff' || typeof b.repo !== 'string') continue
@@ -315,25 +314,52 @@ async function presentPage($: $, name: string, spec: Spec) {
   }
   const path = `${await showDir($)}/${name}.html`
   await $.fs.write(path, pageHtml(spec, pageBlocks(spec.blocks, patches)))
-  if (await isRemoteWindow($)) return {result:`Wrote the page to ${path}, but no browser opened beside this session.`}
-  const opened = await browse($, path, { size: 0.6, reload: true })
-  if (opened.exitCode !== 0) return {result:`Wrote the page to ${path}, but no browser opened beside this session.`}
-  return { result: `Opened the ${name} page in the browser beside this session.` }
+  const remote = await isRemoteWindow($)
+  const opened = remote ? undefined : await browse($, path, { size: 0.6, reload: true })
+  if (opened?.exitCode === 0) return {result:`Opened the ${name} page in the browser beside this session.`}
+  if ((here?.frontend ?? await frontendOf($)) === 'app') {
+    const native = {...spec}; delete native.placement
+    await writeSpec($,name,native)
+    const answer = await presentNative($,name,native,here,existed)
+    if (answer.documents) return {result:`No browser beside this session: ${name} is in Documents instead.`}
+    return {result:`Wrote the page to ${path}, but no browser opened beside this session. ${answer.result}`}
+  }
+  return {result:`Wrote the page to ${path}, but no browser opened beside this session.`}
 }
 
-// Writes a view and makes sure a pane shows it: the open one redraws, else one opens beside the session.
-export async function present($: $, name: string, spec: Spec, here: Here | undefined) {
-  await writeSpec($, name, spec)
-  if (spec.placement === 'browser') return presentPage($, name, spec)
-  if (await isOpen($, await showDir($), name)) return { result: `Updated the ${name} pane.` }
-  if (!here && (await frontendOf($)) === 'app') {
-    const answer=await appCall($,['ls'])
-    if ('error' in answer) return {result:answer.kind==='no_window' ? `Wrote the view to ${await showDir($)}/${name}.json. No Herdr window is connected to this machine, so nothing opened: it shows in Documents once a window connects.` : answer.kind==='may_have_run' ? `The Herdr window did not answer in time; the ${name} pane may have opened.` : `Wrote the view to ${await showDir($)}/${name}.json. ${answer.error}`}
-    return {result:`Wrote the view to ${await showDir($)}/${name}.json. The connected Herdr window could not find this session's terminal.`}
+async function windowFailure($: $, name: string, answer: {error:string;kind:string}) {
+  if (answer.kind === 'no_window') return `Wrote the view to ${await showDir($)}/${name}.json. No Herdr window is connected to this machine, so nothing opened: it shows in Documents once a window connects.`
+  if (answer.kind === 'may_have_run') return `The Herdr window did not answer in time; the ${name} pane may have opened.`
+  return `Wrote the view to ${await showDir($)}/${name}.json. ${answer.error}`
+}
+
+async function presentNative($: $,name:string,spec:Spec,here:Here|undefined,existed:boolean):Promise<{result:string;documents?:boolean}> {
+  const app = (here?.frontend ?? await frontendOf($)) === 'app'
+  const documents = app && (!spec.placement || spec.placement === 'right')
+  if (documents && existed) return {result:`Updated ${name} in Documents.`,documents:true}
+  if (!here && app) {
+    const answer = await appCall($,['ls'])
+    return {result:'error' in answer ? await windowFailure($,name,answer) : `Wrote the view to ${await showDir($)}/${name}.json. The connected Herdr window could not find this session's terminal.`}
   }
-  if (!here) return { result: `Wrote the view to ${await showDir($)}/${name}.json, but this session is in neither herdr nor the Herdr app, so no pane opened.` }
-  const failure = await openPane($, here, name, spec.placement ?? 'right')
-  return failure ? { result: `Wrote the view to ${await showDir($)}/${name}.json. ${failure}` } : { result: `Opened the ${name} pane beside this session; q hides it, its footer chip brings it back.` }
+  if (!here) return {result:`Wrote the view to ${await showDir($)}/${name}.json, but this session is in neither herdr nor the Herdr app, so no pane opened.`}
+  if (documents) {
+    const focused = await appCall($,['do','pane.focus',JSON.stringify({terminal:here.terminal})])
+    if ('error' in focused) return {result:await windowFailure($,name,focused)}
+    const opened = await appCall($,['do',`cockpit.panel-open:show:${name}`,'{}'])
+    if ('error' in opened) return {result:await windowFailure($,name,opened)}
+    return {result:`Opened ${name} in Documents beside this session.`,documents:true}
+  }
+  if (await isOpen($,await showDir($),name)) return {result:`Updated the ${name} pane.`}
+  const failure = await openPane($,here,name,spec.placement ?? 'right')
+  return {result:failure ? `Wrote the view to ${await showDir($)}/${name}.json. ${failure}` : `Opened the ${name} pane beside this session; q hides it, its footer chip brings it back.`}
+}
+
+// Writes a view and opens new app documents beside the session, leaving the person's current tab on updates.
+export async function present($: $,name:string,spec:Spec,here:Here|undefined):Promise<{result:string}|{deny:string}> {
+  const existed = await $.fs.stat(`${await showDir($)}/${name}.json`).then(()=>true,()=>false)
+  await writeSpec($,name,spec)
+  const answer = spec.placement === 'browser' ? await presentPage($,name,spec,here,existed) : await presentNative($,name,spec,here,existed)
+  return {result:answer.result}
 }
 
 // A view holding a blueprint is its session's own: the name carries the session's, so two sessions' plans never meet.

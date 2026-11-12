@@ -84,7 +84,7 @@ test('a click on a blueprint box reads as a change request about it', async () =
 
 
 function presentation(windowCode = 0) {
-  const files = new Map<string,string>([[`${HOME}/.config/cockpit/herdr/cockpit.sh`, '']]);
+  const files = new Map<string,string>([[`${HOME}/.config/cockpit/herdr/cockpit.sh`, ''],[`${HOME}/.config/cockpit/herdr/app.sh`,''],[`${HOME}/.config/cockpit/config.json`,JSON.stringify({herdrPluginRoot:`${HOME}/.config/cockpit/herdr`})]]);
   const calls:string[][]=[];
   const $={
     env:{get:async (key:string)=>({HOME,HC_TERMINAL_ID:'t14'} as Record<string,string>)[key]},
@@ -96,8 +96,9 @@ function presentation(windowCode = 0) {
     process:{run:async(argv:string[])=>{
       calls.push(argv);
       if(argv.join(' ').includes('command -v')) return ran(1);
-      if(argv.includes('browse')) return ran(3);
-      if(argv.includes('window')) return {...ran(windowCode,'{}'),stderr:windowCode?'no Herdr window is connected to this machine':''};
+      if(argv.includes('browse') || argv.some(a=>a.endsWith('/browse.sh'))) return ran(3);
+      if(argv[0]==='herdr'&&argv[2]==='split') return ran(0,'{"result":{"pane":{"pane_id":"w1:p2"}}}');
+      if(argv.includes('window')) return {...ran(windowCode,argv.includes('pane.split')?'{"pane":"p9"}':'{}'),stderr:windowCode?'no Herdr window is connected to this machine':''};
       return ran(0,'{}');
     }},
   } as unknown as Parameters<typeof present>[0];
@@ -116,3 +117,34 @@ test('show without a window says it wrote the view',async()=>{
   expect('result' in answer && answer.result).toContain('No Herdr window is connected');
   expect(f.files.has(`${DIR}/quota.json`)).toBe(true);
 });
+
+const appHere = {pane:'app:t14',tab:'tab1',space:'s1',frontend:'app' as const,terminal:'t14',paneId:'p14'}
+const quotaSpec = {title:'Quota',blocks:[{type:'markdown',text:'ENG-412'}],at:1,session:'acme-session'}
+test('a new view opens Documents beside the session in the app',async()=>{
+ const f=presentation();const answer=await present(f.$,'new-quota',quotaSpec,appHere)
+ expect('result' in answer && answer.result).toBe('Opened new-quota in Documents beside this session.')
+ expect(f.calls.filter(a=>a.includes('do')).map(a=>a[a.indexOf('do')+1])).toEqual(['pane.focus','cockpit.panel-open:show:new-quota'])
+})
+test('an update only rewrites the view',async()=>{
+ const f=presentation();await present(f.$,'existing-quota',quotaSpec,appHere);const count=f.calls.length
+ const answer=await present(f.$,'existing-quota',quotaSpec,appHere)
+ expect('result' in answer && answer.result).toBe('Updated existing-quota in Documents.');expect(f.calls.length).toBe(count)
+})
+test('down still splits a pane',async()=>{
+ const f=presentation();await present(f.$,'down-quota',{...quotaSpec,placement:'down'},appHere)
+ expect(f.calls.some(a=>a.includes('pane.split'))).toBe(true)
+})
+test('a browser view with no browser lands in Documents',async()=>{
+ const f=presentation();const answer=await present(f.$,'browser-quota',{...quotaSpec,placement:'browser'},appHere)
+ expect('result' in answer && answer.result).toBe('No browser beside this session: browser-quota is in Documents instead.')
+ expect(JSON.parse(f.files.get(`${DIR}/browser-quota.json`)!).placement).toBe(undefined)
+ expect(f.calls.some(a=>a.includes('cockpit.panel-open:show:browser-quota'))).toBe(true)
+})
+test('a blueprint opens Documents too',async()=>{
+ const f=presentation();await present(f.$,'blueprint-acme',{...quotaSpec,blocks:[{type:'blueprint',text:'flowchart TD\n a --> b'}]},appHere)
+ expect(f.calls.some(a=>a.includes('cockpit.panel-open:show:blueprint-acme'))).toBe(true)
+})
+test('the herdr TUI still splits a pane',async()=>{
+ const f=presentation();await present(f.$,'tui-quota',quotaSpec,{pane:'w1:p1',tab:'t1',space:'w1',frontend:'tui'})
+ expect(f.calls.some(a=>a[0]==='herdr'&&a[2]==='split')).toBe(true)
+})

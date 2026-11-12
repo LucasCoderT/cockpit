@@ -368,8 +368,9 @@ fn open_pane(dir: &Path, here: &Here, name: &str, session: &str, placement: &str
     match here {
         Here::App { terminal, pane } => {
             let props = json!({"app": "show", "name": name, "session": session});
-            let made = frontend::app_do("pane.split", &json!({"direction": direction, "pane": pane, "mod": "cockpit", "props": props}));
-            let Some(new) = made.as_ref().and_then(|m| m["pane"].as_str()).map(str::to_string) else {
+            let made = frontend::window("do", "pane.split", &json!({"direction": direction, "pane": pane, "mod": "cockpit", "props": props}))
+                .map_err(|error| error.to_string())?;
+            let Some(new) = made["pane"].as_str().map(str::to_string) else {
                 return Err("herdr-app pane.split failed: is the cockpit mod installed? (cockpit app install)".into());
             };
             files::write(&dir.join(format!("{name}.app")), &json!({"pane": new, "terminal": terminal})).map_err(|e| e.to_string())?;
@@ -438,7 +439,7 @@ pub fn show(input: &Value, here: Option<&Here>, session: &str) -> Result<String,
     let has_plan = blocks.iter().any(|b| b["type"] == "blueprint");
     let pane = input["pane"].as_str().unwrap_or_default();
     let name = if has_plan { blueprint_name(pane, session) } else { pane.to_string() };
-    // A browser page is the Claude plugin's: here the view opens in a pane on the right.
+    // The CLI renders browser requests natively from their blocks.
     let asked = input["placement"].as_str().unwrap_or("right");
     let placement = if asked == "browser" { "right" } else { asked };
     let cwd = std::env::current_dir().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default();
@@ -454,14 +455,53 @@ pub fn show(input: &Value, here: Option<&Here>, session: &str) -> Result<String,
         // The call's text is the plan until the agent writes the file.
         let _ = std::fs::remove_file(&plan);
     }
-    files::write(&dir.join(format!("{name}.json")), &spec).map_err(|e| format!("the view was not written: {e}"))?;
-    let mut said = if is_open(&dir, &name) {
+    let path = dir.join(format!("{name}.json"));
+    let existed = path.exists();
+    if asked == "browser" {
+        spec.as_object_mut().unwrap().remove("placement");
+    }
+    files::write(&path, &spec).map_err(|e| format!("the view was not written: {e}"))?;
+    let app = matches!(here, Some(Here::App { .. })) || (here.is_none() && frontend::detect() == Frontend::App);
+    let documents = app && ["right", "browser"].contains(&placement);
+    let error = |err: frontend::WindowError| match err {
+        frontend::WindowError::NoWindow => format!(
+            "Wrote the view to {}. No Herdr window is connected to this machine, so nothing opened: it shows in Documents once a window connects.",
+            path.display()
+        ),
+        frontend::WindowError::MayHaveRun => format!("The Herdr window did not answer in time; the {name} pane may have opened."),
+        frontend::WindowError::Failed(why) => format!("Wrote the view to {}. {why}", path.display()),
+    };
+    let mut said = if documents && existed {
+        if asked == "browser" { format!("No browser beside this session: {name} is in Documents instead.") } else { format!("Updated {name} in Documents.") }
+    } else if documents {
+        if let Some(Here::App { terminal, .. }) = here {
+            let shown = frontend::window("do", "pane.focus", &json!({"terminal":terminal}))
+                .and_then(|_| frontend::window("do", &format!("cockpit.panel-open:show:{name}"), &json!({})));
+            match shown {
+                Ok(_) if asked == "browser" => format!("No browser beside this session: {name} is in Documents instead."),
+                Ok(_) => format!("Opened {name} in Documents beside this session."),
+                Err(err) => error(err),
+            }
+        } else {
+            match frontend::window("ls", "", &Value::Null) {
+                Err(err) => error(err),
+                Ok(_) => format!("Wrote the view to {}. The connected Herdr window could not find this session's terminal.", path.display()),
+            }
+        }
+    } else if app && here.is_none() {
+        match frontend::window("ls", "", &Value::Null) {
+            Err(err) => error(err),
+            Ok(_) => format!("Wrote the view to {}. The connected Herdr window could not find this session's terminal.", path.display()),
+        }
+    } else if is_open(&dir, &name) {
         format!("Updated the {name} pane.")
     } else if let Some(here) = here {
-        open_pane(&dir, here, &name, session, placement)?;
-        format!("Opened the {name} pane beside this session; q hides it.")
+        match open_pane(&dir, here, &name, session, placement) {
+            Ok(()) => format!("Opened the {name} pane beside this session; q hides it."),
+            Err(why) => format!("Wrote the view to {}. {why}", path.display()),
+        }
     } else {
-        format!("Wrote the view to {}, but this session is in neither herdr nor the Herdr app, so no pane opened.", dir.join(format!("{name}.json")).display())
+        format!("Wrote the view to {}, but this session is in neither herdr nor the Herdr app, so no pane opened.", path.display())
     };
     let commands = commands_of(input);
     if !commands.is_empty() {
