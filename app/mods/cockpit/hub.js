@@ -323,7 +323,8 @@ export function subscribe(cx, { views = [], docs = [], notify = false, focus = n
             } : undefined;
             const outcome = await runWindowCommand(message.window, {machine:remote,run,clipboard,focus:focusHere,
               herdrApp: argv => exec("env", [`HERDR_APP_HOME=${appHome()}`, `${home()}/.local/bin/herdr-app`, ...argv])});
-            await windowReply(message.window.id, secret, message.window.capability, outcome);
+            // A late answer can be refused without invalidating this window's live subscription.
+            try { await windowReply(message.window.id, secret, message.window.capability, outcome); } catch {}
             continue;
           }
           if (remote && message.focus) continue;

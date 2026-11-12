@@ -24,6 +24,7 @@ async function fixture(t, remote = true, globals = {}, host = "127.0.0.1") {
         else if (request.op === "subscribe" && request.window && behavior.refuseWindow > 0) {
           behavior.refuseWindow--; socket.end('{"error":"this window secret is not the hub\'s: ask again"}\n');
         }
+        else if (request.op === "window_reply" && behavior.replyError) socket.write(JSON.stringify({error:behavior.replyError}) + "\n");
         else if (request.op === "subscribe") socket.write(JSON.stringify({ view: typeof request.views[0] === "string" ? request.views[0] : request.views[0].name, value: { tickets: behavior.tickets } }) + "\n");
         else socket.write(JSON.stringify(request.op === "ping" ? { ok: true } : { value: { tickets: behavior.tickets } }) + "\n");
       }
@@ -404,4 +405,21 @@ test('a review or agent action focused on a local desktop terminal never reaches
   await assert.rejects(f.hub.act('agents','seen',[{terminal}]),/not on runner/);
  }
  assert.equal(f.calls.filter(c=>c[0]==='exec').length,0);
+});
+
+test("a rejected late window reply keeps the notification subscription alive", async t => {
+  const f=await fixture(t), r=runtime(t);
+  f.behavior.exec={code:0,stdout:'{"secret":"window-secret"}',stderr:""};
+  f.behavior.replyError="unknown, expired or already answered window command";
+  const sub=f.hub.subscribe(r.cx,{views:["inbox"],notify:true,window:true},r.message,r.state);
+  t.after(()=>sub.stop()); await until(()=>r.received.length===1);
+  const subscriber=[...f.clients][0];
+  subscriber.write(JSON.stringify({window:{id:7,capability:"window-call-key",cmd:"do",command:"cockpit.panel-open:show:quota",args:{},deadline:Date.now()+10000}})+"\n");
+  await until(()=>f.messages.some(m=>m.op==="window_reply"));
+  await new Promise(resolve=>setTimeout(resolve,30));
+  subscriber.write(JSON.stringify({notify:{title:"ENG-412"}})+"\n");
+  await until(()=>r.received.some(m=>m.notify?.title==="ENG-412"));
+  assert.equal(f.messages.filter(m=>m.op==="subscribe").length,1);
+  assert.ok(!r.states.some(s=>s.startsWith("error:")));
+  sub.stop(); await Promise.all(r.tasks);
 });
