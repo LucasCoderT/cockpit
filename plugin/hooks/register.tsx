@@ -21,6 +21,7 @@ import { SHOW_SPEC, SHOW_TOOL_FULL, collectAnswers, commandsOf, isBlueprintFile,
 import { clearRows, closeIdleBrowsers, notifyFinished, reportSide, reportUsage } from './sidebar'
 import { checkUpdate, forget, heartbeat } from './upkeep'
 import { branchOf, seedWork, trackWork } from './work'
+import { noteRunbookWrite } from './runbooks'
 
 const links = atom({ plugin: 'cockpit', key: 'links' } as const, null)
 const sidePage = atom({ plugin: 'cockpit', key: 'sidePage' } as const, null)
@@ -182,6 +183,16 @@ export const register: Register = on => {
   on('tool.call', { tool: HEALTH_TOOL_FULL }, async ($, e) => find($, e as unknown as Record<string, unknown>, healthArgs))
   // Both only read what cockpit keeps, so they need no permission prompt.
   on('tool.check', { tool: [SEARCH_TOOL_FULL, CHANGES_TOOL_FULL, READ_TOOL_FULL, HEALTH_TOOL_FULL] }, async () => ({ decision: 'allow' }))
+
+  on('tool.call', {tool:['Write','Edit']}, async ($,e,next) => {
+    const path=(e.input as {file_path?:unknown} | undefined)?.file_path
+    const existed=typeof path==='string' && await $.fs.stat(path).then(()=>true,()=>false)
+    const result=await next(e)
+    if(typeof path==='string' && await $.fs.stat(path).then(()=>true,()=>false)) {
+      await noteRunbookWrite($,path,existed).catch(()=>undefined)
+    }
+    return result
+  })
 
   on('tool.call', async ($, e, next) => {
     await trackWork($, e as unknown as Record<string, unknown>).catch(() => undefined)
