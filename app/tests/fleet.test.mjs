@@ -14,7 +14,7 @@ async function fixture() {
       setShared: (...args) => calls.push(["shared", ...args]),
       notify: notice => notices.push(notice),
     },
-    "./hub.js": { act: () => { throw new Error("no hub action expected"); } },
+    "./hub.js": { act: async (...args) => { calls.push(["act", ...args]); return {}; } },
   };
   const sources = new Map(), modules = new Map();
   const folder = new URL("../mods/cockpit/", import.meta.url);
@@ -80,7 +80,8 @@ test("remote Go, Peek and Open beside navigate to the runner's terminal; Archive
   const agents = Object.create(f.fleet.AgentsModel.prototype);
   agents.value = model;
   const row = agents.rows[0];
-  const cx = { notify() {} };
+  const cx = { notify() {}, spawn: f => f(cx) };
+  agents.busy = new Map();
   assert.equal(new f.fleet.Sidebar().subRows({}, row).length, 0);
   agents.go(cx, row);
   agents.command(`agents|peek|${row.terminal}|`, cx);
@@ -96,6 +97,7 @@ test("remote Go, Peek and Open beside navigate to the runner's terminal; Archive
   ]);
   assert.equal(f.calls.some(c => c[0] === "tab.settle"), false);
   assert.equal(f.notices.length, 2);
+  assert.equal(f.calls.find(c => c[0] === "act")[2], "seen");
 });
 
 test("local Go, Peek, Open beside and Archive handlers retain their commands", async () => {
@@ -104,7 +106,8 @@ test("local Go, Peek, Open beside and Archive handlers retain their commands", a
   const agents = Object.create(f.fleet.AgentsModel.prototype);
   agents.value = model;
   const row = agents.rows[0];
-  const cx = { notify() {} };
+  const cx = { notify() {}, spawn: f => f(cx) };
+  agents.busy = new Map();
   agents.go(cx, row);
   agents.command(`agents|peek|${row.terminal}|`, cx);
   const home = new f.fleet.Home();

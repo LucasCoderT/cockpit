@@ -276,8 +276,7 @@ export class AgentsModel {
   go(cx, row) {
     run("agent.focus", { terminal: row.address });
     run("layout.select", { stack: "center", child: "work" });
-    // A runner's hub takes no writes from a remote desk.
-    if (!row.herdr && !row.remote) this.act(cx, "seen", { terminal: row.terminal });
+    if (!row.herdr) this.act(cx, "seen", { terminal: row.terminal });
   }
 
   /** The right-click menu of an agent; its items come back as `cockpit.agents|<what>|<terminal>|<arg>`. */

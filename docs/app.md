@@ -56,7 +56,7 @@ the view to bring `target.key` into view (`cockpit focus`, `hub.go`). Without `c
 panel and `AgentsModel` (agentsui.js) falls back to Herdr's `agents()`. Only the app's main view sets `focus`; count
 subscriptions leave it out, so they cannot consume a pending remote-desk navigation.
 
-## A remote desk (preview)
+## A remote desk
 
 The Herdr app can read a Linux or macOS runner's hub, including from Windows. Both ends need this version of the
 cockpit mod/hub. Connect the runner through Herdr's machine settings first, then put the cockpit layout and mod in
@@ -88,17 +88,14 @@ runner's hub. The machine must connect to the hc session the runner's hub reads 
 runs with `HC_SESSION`), or these reach a different terminal with the same id. Runner agents are not joined to local
 terminals or tabs with matching IDs.
 
-The review panel works on a runner agent: focus it (Go from the agents list) and the panel reads its folder, a runner
-path, over TCP. Its three actions, `review send`, `review walkthrough` and `review stop_walkthrough`, travel as
-`cockpit hub act review <action> <JSON args>` run on the runner through Herdr's machine connection, the way `hub start`
-does; that command checks the arguments and hands the action to the runner's hub on its unix socket. Comments go only to
-an agent of the runner (`runner/t7` reaches the runner as `t7`). Every other action and Archive stay unavailable in this
-preview.
+Every app action, including runbook steps, to-do changes and confirmations, travels as
+`cockpit hub act <app> <action> <JSON args> [--armed <token>]` over Herdr's machine connection. That command
+hands it to the runner's hub on its unix socket and returns the full action response. Terminal handles retain
+`app:`: `app:runner/t7` reaches the hub as `app:t7`, while raw `runner/t7` reaches it as `t7`. Addresses of
+another machine are refused. Navigation and links open on the desktop.
 
 TCP has no TLS: use an encrypted private network such as Tailscale, and keep `hub.json` private. A hub listening
-off loopback answers reads only, whoever holds the token; the mod keeps the same list so a remote desk says so
-without asking. That holds for the runner's own window too, so leave `COCKPIT_HUB_LISTEN` unset on a machine whose
-desktop writes.
+off loopback answers reads only, whoever holds the token. Actions use the existing shell connection to the machine.
 
 Desktop checks: `node --experimental-vm-modules --test app/tests/*.test.mjs`.
 

@@ -63,9 +63,18 @@ async function fixture(t, remote = true, globals = {}, host = "127.0.0.1") {
     } } },
   };
   const module = new SourceTextModule(await readFile(new URL("../mods/cockpit/hub.js", import.meta.url), "utf8"), { context });
-  await module.link(name => new SyntheticModule(Object.keys(imports[name]), function () {
-    for (const [key, value] of Object.entries(imports[name])) this.setExport(key, value);
-  }, { context }));
+  const modules = new Map();
+  async function load(name) {
+    if (modules.has(name)) return modules.get(name);
+    const values = imports[name];
+    const child = values ? new SyntheticModule(Object.keys(values), function () {
+      for (const [key,value] of Object.entries(values)) this.setExport(key,value);
+    }, {context}) : new SourceTextModule(await readFile(new URL(`../mods/cockpit/${name.replace(/^\.\//, "")}`, import.meta.url), "utf8"), {context,identifier:name});
+    modules.set(name,child);
+    if (!values) await child.link(load);
+    return child;
+  }
+  await module.link(load);
   await module.evaluate();
   return { hub: module.namespace, calls, info, install, messages, clients, behavior, server, host };
 }
@@ -90,16 +99,28 @@ for (const [name, globals] of [["TextDecoder", { TextDecoder }], ["the percent f
   await Promise.all(r.tasks);
 });
 
-test("remote actions and commands cannot operate the runner's desktop", async t => {
+test("a remote act runs hub act on the runner and returns its whole answer", async t => {
   const f = await fixture(t);
-  await assert.rejects(f.hub.act("inbox", "review", [{}]), /read-only/);
-  await assert.rejects(f.hub.cockpit(["resume", "all"]), /read-only/);
-  await assert.rejects(f.hub.act("review", "open_reviewr", ["/runner/acme/api"]), /read-only/);
-  await assert.rejects(f.hub.cockpit(["hub", "act", "inbox", "review", "[]"]), /read-only/);
-  await assert.rejects(f.hub.cockpit(["hub", "act", "review", "send"]), /read-only/);
-  await assert.rejects(f.hub.go({ app: "session", key: "past" }), /read-only/);
+  const answer = { note: "done", pending: { runbook: true }, refreshing: {}, error: null };
+  f.behavior.exec = { code: 0, stdout: JSON.stringify(answer), stderr: "" };
+  assert.deepEqual(JSON.parse(JSON.stringify(await f.hub.act("runbook", "done", [["eng-412", "2"]]))), answer);
+  const call = f.calls.find(c => c[0] === "exec");
+  assert.equal(call[3].on, "runner");
+  assert.deepEqual(Array.from(call[2].slice(-5)), ["hub","act","runbook","done",'[["eng-412","2"]]']);
   assert.equal(f.messages.length, 0);
-  assert.equal(f.calls.filter(call => call[0] === "exec").length, 0);
+});
+
+test("a remote act translates terminal handles and armed", async t => {
+  const f = await fixture(t);
+  await f.hub.request("act", { app:"agents", action:"seen", args:[{terminal:"app:runner/t7"}], armed:"delete-notes" });
+  const args = f.calls.find(c => c[0] === "exec")[2];
+  assert.deepEqual(Array.from(args.slice(-3)), ['[{"terminal":"app:t7"}]',"--armed","delete-notes"]);
+});
+
+test("another machine's agent is refused before exec", async t => {
+  const f = await fixture(t);
+  await assert.rejects(f.hub.act("agents","seen",[{terminal:"app:other/t7"}]), /another machine/);
+  assert.equal(f.calls.filter(c => c[0] === "exec").length, 0);
 });
 
 test("remote review actions run as a cockpit command on the runner, through its machine connection", async t => {
@@ -117,9 +138,9 @@ test("remote review actions run as a cockpit command on the runner, through its 
   assert.equal(f.messages.length, 0, "no write travels over TCP");
 });
 
-test("a remote review goes only to one of the runner's agents", async t => {
+test("a remote review refuses another machine's terminal", async t => {
   const f = await fixture(t);
-  for (const terminal of ["t7", "app:t7", "laptop/t7", "runner/laptop/t7", "runner/", ""]) await assert.rejects(f.hub.act("review", "send", [terminal, { comments: [] }]), /runner's agents/);
+  await assert.rejects(f.hub.act("review", "send", ["laptop/t7", { comments: [] }]), /another machine/);
   assert.equal(f.calls.filter(call => call[0] === "exec").length, 0);
 });
 

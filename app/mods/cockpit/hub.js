@@ -3,6 +3,7 @@
 
 import net from "net";
 import { exec, appHome, readTextFile, run, window as win } from "herdr";
+import { argsToRunner } from "./address.js";
 
 /** Closes a socket, already closed or not: a throw here would end the subscription that is tidying up. */
 const close = (socket) => {
@@ -18,8 +19,6 @@ const NOT_INSTALLED = "cockpit is not installed in this Herdr home";
 const READ_ONLY = "the remote cockpit client is read-only; this action needs a local cockpit installation";
 const REMOTE_READS = new Set(["ping", "view", "search", "fetch", "events", "history", "shown"]);
 const APPS = new Set(["inbox", "todo", "runbook", "meetings", "mail", "monitor", "routines", "show"]);
-/** The review panel's actions a remote desk runs on the runner with `cockpit hub act review`, the hub's TCP gate untouched. */
-const RUNNER_REVIEW = new Set(["send", "walkthrough", "stop_walkthrough"]);
 /** The app behind a pinned space's name, as `cockpit focus space:<name>` gives it. */
 const SPACES = { inbox: "inbox", runbook: "runbook", "to-do": "todo", todo: "todo", meetings: "meetings", monitor: "monitor", routines: "routines", mail: "mail" };
 
@@ -186,8 +185,6 @@ export async function cockpit(args) {
         : { app: { meeting: "meetings", routine: "routines" }[app] ?? app, key });
       return { code: 0, stdout: "", stderr: "" };
     }
-    const review = args[1] === "act" && args.length === 5 && args[2] === "review" && RUNNER_REVIEW.has(args[3]);
-    if (args[0] !== "hub" || !(["start", "ping", "shown"].includes(args[1]) || review)) throw new Error(READ_ONLY);
     return exec("env", [...vars, `HOME=${home}`, `COCKPIT_HUB_LISTEN=${host}`, "COCKPIT_FRONTEND=app", bin, ...args], { on: machine });
   }
   return exec("env", [`HOME=${home}`, `HERDR_APP_HOME=${appHome()}`, "COCKPIT_FRONTEND=app", ...vars, bin, ...args]);
@@ -204,7 +201,12 @@ export async function request(op, fields = {}) {
   const { machine } = await install();
   if (machine) {
     if (op === "go") return localFocus(fields.target);
-    if (op === "act" && fields.app === "review" && RUNNER_REVIEW.has(fields.action)) return runnerReview(machine, fields.action, fields.args ?? []);
+    if (op === "act") {
+      const args = argsToRunner(fields.args ?? [], machine);
+      const r = await cockpit(["hub", "act", fields.app, fields.action, JSON.stringify(args), ...(fields.armed ? ["--armed", fields.armed] : [])]);
+      if (r.code !== 0) throw new Error(r.stderr.trim() || `${fields.app} ${fields.action} failed on ${machine}`);
+      return JSON.parse(r.stdout);
+    }
     if (!REMOTE_READS.has(op)) throw new Error(READ_ONLY);
   }
   const { socket, token, lines, remote } = await connect();
@@ -219,20 +221,6 @@ export async function request(op, fields = {}) {
   } finally {
     close(socket);
   }
-}
-
-/** A review action run by the runner's own cockpit, which hands it to its hub on the unix socket. The comments go to a
- *  runner agent only: its address here is `<machine>/t7`, `t7` there. */
-async function runnerReview(machine, action, args) {
-  if (action === "send") {
-    const terminal = String(args[0] ?? "").replace(/^app:/, "");
-    const local = terminal.startsWith(`${machine}/`) ? terminal.slice(machine.length + 1) : "";
-    if (!/^[A-Za-z0-9]+$/.test(local)) throw new Error("focus one of the runner's agents to send it the review");
-    args = [local, ...args.slice(1)];
-  }
-  const r = await cockpit(["hub", "act", "review", action, JSON.stringify(args)]);
-  if (r.code !== 0) throw new Error(r.stderr.trim() || `review ${action} failed on ${machine}`);
-  return JSON.parse(r.stdout);
 }
 
 /** An app's action: { note, pending, refreshing, error }. */
