@@ -396,3 +396,12 @@ test("a window command line gets a window_reply with the secret", async t => {
   assert.ok(f.calls.some(c=>c[0]==="run"&&c[1]==="cockpit.panel-open:show:quota"));
   sub.stop(); await Promise.all(r.tasks);
 });
+
+test('a review or agent action focused on a local desktop terminal never reaches the runner',async t=>{
+ const f=await fixture(t);
+ for(const terminal of ['t7','app:t7']) {
+  await assert.rejects(f.hub.act('review','send',[terminal,{comments:[]}]),/not on runner/);
+  await assert.rejects(f.hub.act('agents','seen',[{terminal}]),/not on runner/);
+ }
+ assert.equal(f.calls.filter(c=>c[0]==='exec').length,0);
+});

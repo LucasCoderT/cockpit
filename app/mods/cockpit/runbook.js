@@ -17,12 +17,12 @@ import {
 /** The runbook most recently written by the focused agent, then its ticket or checkout match. */
 export function slugFor(books, agents, focusedTerminal, machine, pane) {
   if (!focusedTerminal || (machine && !focusedTerminal.replace(/^app:/, "").startsWith(`${machine}/`))) return null;
-  const handle = value => {
+  const handle = (value, origin = "runner") => {
     if (typeof value !== "string") return null;
-    try { const local = toRunner(value,machine); return local.startsWith("app:") ? local : `app:${local}`; }
+    try { const local = toRunner(value,machine,origin); return local.startsWith("app:") ? local : `app:${local}`; }
     catch { return null; }
   };
-  const terminal = handle(focusedTerminal);
+  const terminal = handle(focusedTerminal,"desktop");
   const row = agents.find(a => handle(a.terminal ?? a.address) === terminal);
   const newest = found => found.slice().sort((a,b)=>(Number(b.owner?.at ?? 0)-Number(a.owner?.at ?? 0)) || String(b.updated ?? "").localeCompare(String(a.updated ?? "")))[0]?.slug ?? null;
   const owned = newest(books.filter(b=>b.owner?.terminal && handle(b.owner.terminal)===terminal));

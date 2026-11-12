@@ -127,17 +127,32 @@ export default class Show {
     try {
       if (this.panel) localStorage.setItem("show.pick", this.pick ?? "");
     } catch {}
+    const generation = this.subscriptionGeneration = (this.subscriptionGeneration ?? 0) + 1;
     this.sub?.stop();
-    const args = this.name ? { name: this.name } : { terminal: this.terminal ? toRunner(this.terminal,this.machine) : null, pick: this.pick };
+    this.sub = null;
+    let args;
+    try {
+      args = this.name ? {name:this.name} : {terminal:this.terminal ? toRunner(this.terminal,this.machine) : null,pick:this.pick};
+    } catch(error) {
+      this.data = null;
+      this.pick = null;
+      this.pendingGo = null;
+      this.status = `error: ${error?.message ?? error}`;
+      this.updateBadge();
+      cx.notify?.();
+      return;
+    }
     this.sub = hub.subscribe(
       cx,
       { views: [{ name: "show", args }], focus: this.panel ? "show" : null },
       (m, cx) => {
+        if (generation !== this.subscriptionGeneration) return;
         if (m.view === "show") this.take(m.value, cx);
         if (m.focus === "show") this.goTo(m.target?.key ?? m.target, cx);
         cx.notify();
       },
       (state, cx) => {
+        if (generation !== this.subscriptionGeneration) return;
         this.status = state;
         cx.notify();
       },
