@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { answerText, blueprintName, collectAnswers, isBlueprintFile, viewError } from '../hooks/show'
+import { answerText, blueprintName, collectAnswers, isBlueprintFile, viewError, present } from '../hooks/show'
 import { SHOW_CASES } from './fixtures/show-cases'
 
 const HOME = '/home/me'
@@ -81,3 +81,38 @@ test('a click on a blueprint box reads as a change request about it', async () =
   const ask = { block: 0, type: 'blueprint', value: { node: 'B', label: 'Count calls', text: 'count per org, not per user' }, label: 'Count calls' }
   expect(answerText('blueprint-3f2a1c9d', ask, { type: 'blueprint' })).toBe('In the blueprint, about «Count calls» (box B): count per org, not per user')
 })
+
+
+function presentation(windowCode = 0) {
+  const files = new Map<string,string>([[`${HOME}/.config/cockpit/herdr/cockpit.sh`, '']]);
+  const calls:string[][]=[];
+  const $={
+    env:{get:async (key:string)=>({HOME,HC_TERMINAL_ID:'t14'} as Record<string,string>)[key]},
+    session:{id:async()=> 'acme-session',cwd:async()=>'/src/acme/api'},
+    fs:{read:async(path:string)=>{if(!files.has(path)) throw Error('ENOENT'); return files.get(path)!},
+      write:async(path:string,text:string)=>void files.set(path,text),
+      stat:async(path:string)=>{if(!files.has(path)) throw Error('ENOENT');return {mtimeMs:1,size:1}},
+      list:async()=>[]},
+    process:{run:async(argv:string[])=>{
+      calls.push(argv);
+      if(argv.join(' ').includes('command -v')) return ran(1);
+      if(argv.includes('browse')) return ran(3);
+      if(argv.includes('window')) return {...ran(windowCode,'{}'),stderr:windowCode?'no Herdr window is connected to this machine':''};
+      return ran(0,'{}');
+    }},
+  } as unknown as Parameters<typeof present>[0];
+  return {$,files,calls};
+}
+
+test('a page that did not open says so',async()=>{
+  const f=presentation();
+  const answer=await present(f.$,'quota',{title:'Quota',blocks:[{type:'text',text:'ENG-412'}],at:1,session:'acme-session',placement:'browser'},undefined);
+  expect('result' in answer && answer.result).toContain('no browser opened');
+});
+
+test('show without a window says it wrote the view',async()=>{
+  const f=presentation(3);
+  const answer=await present(f.$,'quota',{title:'Quota',blocks:[{type:'text',text:'ENG-412'}],at:1,session:'acme-session'},undefined);
+  expect('result' in answer && answer.result).toContain('No Herdr window is connected');
+  expect(f.files.has(`${DIR}/quota.json`)).toBe(true);
+});

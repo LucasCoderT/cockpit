@@ -4,7 +4,7 @@ import type { ViewChip } from '../types'
 
 import { browse } from './browser'
 import { cacheDir, cockpitCommand, loadConfig } from './config'
-import { appDo } from './herdr'
+import { appDo, appCall, frontendOf, isRemoteWindow } from './herdr'
 import type { Here } from './herdr'
 import { PAGE_BLOCKS, pageBlocks, pageHtml } from './page'
 import { fetchSource } from './sources'
@@ -268,7 +268,9 @@ async function isOpenSoon($: $, dir: string, name: string, pidMtime: number) {
 // In the app the view is the cockpit mod's, split beside the session's pane; the pane it got is kept in <name>.app.
 async function openAppPane($: $, here: Here, name: string, placement: Placement) {
   const props = { app: 'show', name, session: await $.session.id() }
-  const made = await appDo($, 'pane.split', { direction: placement === 'down' ? 'down' : 'right', pane: here.paneId, mod: 'cockpit', props })
+  const answer = await appCall($, ['do','pane.split',JSON.stringify({ direction: placement === 'down' ? 'down' : 'right', pane: here.paneId, mod: 'cockpit', props })])
+  if ('error' in answer) return answer.kind === 'no_window' ? 'No Herdr window is connected to this machine, so nothing opened: it shows in Documents once a window connects.' : answer.kind === 'may_have_run' ? `The Herdr window did not answer in time; the ${name} pane may have opened.` : answer.error
+  const made = answer.value
   const pane = made?.pane as string | undefined
   if (!pane) return 'herdr-app pane.split failed: is the cockpit mod installed? (cockpit app install)'
   await $.fs.write(`${await showDir($)}/${name}.app`, JSON.stringify({ pane, terminal: here.terminal }))
@@ -313,7 +315,9 @@ async function presentPage($: $, name: string, spec: Spec) {
   }
   const path = `${await showDir($)}/${name}.html`
   await $.fs.write(path, pageHtml(spec, pageBlocks(spec.blocks, patches)))
-  await browse($, path, { size: 0.6, reload: true })
+  if (await isRemoteWindow($)) return {result:`Wrote the page to ${path}, but no browser opened beside this session.`}
+  const opened = await browse($, path, { size: 0.6, reload: true })
+  if (opened.exitCode !== 0) return {result:`Wrote the page to ${path}, but no browser opened beside this session.`}
   return { result: `Opened the ${name} page in the browser beside this session.` }
 }
 
@@ -322,9 +326,14 @@ export async function present($: $, name: string, spec: Spec, here: Here | undef
   await writeSpec($, name, spec)
   if (spec.placement === 'browser') return presentPage($, name, spec)
   if (await isOpen($, await showDir($), name)) return { result: `Updated the ${name} pane.` }
+  if (!here && (await frontendOf($)) === 'app') {
+    const answer=await appCall($,['ls'])
+    if ('error' in answer) return {result:answer.kind==='no_window' ? `Wrote the view to ${await showDir($)}/${name}.json. No Herdr window is connected to this machine, so nothing opened: it shows in Documents once a window connects.` : answer.kind==='may_have_run' ? `The Herdr window did not answer in time; the ${name} pane may have opened.` : `Wrote the view to ${await showDir($)}/${name}.json. ${answer.error}`}
+    return {result:`Wrote the view to ${await showDir($)}/${name}.json. The connected Herdr window could not find this session's terminal.`}
+  }
   if (!here) return { result: `Wrote the view to ${await showDir($)}/${name}.json, but this session is in neither herdr nor the Herdr app, so no pane opened.` }
   const failure = await openPane($, here, name, spec.placement ?? 'right')
-  return failure ? { deny: failure } : { result: `Opened the ${name} pane beside this session; q hides it, its footer chip brings it back.` }
+  return failure ? { result: `Wrote the view to ${await showDir($)}/${name}.json. ${failure}` } : { result: `Opened the ${name} pane beside this session; q hides it, its footer chip brings it back.` }
 }
 
 // A view holding a blueprint is its session's own: the name carries the session's, so two sessions' plans never meet.

@@ -64,12 +64,36 @@ export async function frontendOf($: $): Promise<Frontend | undefined> {
 // The Herdr app's programs, from ~/.local/bin where its installer puts them.
 const APP_PATH = 'PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"'
 
-// `herdr-app do <command> <json>`: what it made, undefined when it failed.
+export type AppAnswer = { value: Record<string, unknown> } | { error: string; kind: 'no_window' | 'may_have_run' | 'failed' }
+
+async function localApp($: $) {
+  const found = await $.process.run(['sh','-c', `${APP_PATH}; command -v "\${HERDR_APP_BIN:-herdr-app}"`], {timeoutMs:5_000}).catch(() => undefined)
+  return found?.exitCode === 0
+}
+
+// Calls this machine's desktop, or the authenticated window connected to its hub.
+export async function appCall($: $, argv: string[]): Promise<AppAnswer> {
+  try {
+    const local = await localApp($)
+    const cockpit = local ? undefined : await cockpitCommand($)
+    if (!local && !cockpit) return {error:'no Herdr window is connected to this machine',kind:'no_window'}
+    const done = await $.process.run(local
+      ? ['sh','-c', `${APP_PATH} exec "\${HERDR_APP_BIN:-herdr-app}" ${argv[0]} "$@"`, 'sh', ...argv.slice(1)]
+      : [...cockpit!, 'window', ...argv], {timeoutMs:15_000})
+    if (done.exitCode !== 0) return {error:done.stderr.trim() || 'the Herdr window did not answer',kind:done.exitCode===3?'no_window':done.exitCode===4?'may_have_run':'failed'}
+    const value = JSON.parse(done.stdout || '{}') as Record<string,unknown>
+    return typeof value.error === 'string' ? {error:value.error,kind:'failed'} : {value}
+  } catch(error) { return {error:String(error),kind:'may_have_run'} }
+}
+
+export async function isRemoteWindow($: $): Promise<boolean> {
+  return (await frontendOf($)) === 'app' && !(await localApp($))
+}
+
+// What a desktop command made, undefined when it could not be confirmed.
 export async function appDo($: $, command: string, args: Record<string, unknown> = {}): Promise<Record<string, unknown> | undefined> {
-  const done = await $.process.run(['sh', '-c', `${APP_PATH} exec "\${HERDR_APP_BIN:-herdr-app}" do "$1" "$2"`, 'sh', command, JSON.stringify(args)], { timeoutMs: 10_000 })
-  if (done.exitCode !== 0) return undefined
-  const made = JSON.parse(done.stdout || '{}') as Record<string, unknown>
-  return made.error ? undefined : made
+  const result = await appCall($,['do',command,JSON.stringify(args)])
+  return 'value' in result ? result.value : undefined
 }
 
 type AppTerminal = { terminal: string; pane: string; status: string | null; name: string | null; app: string | null }
@@ -78,14 +102,14 @@ export type AppSpace = { id: string; name: string; folder: string; machine: stri
 
 // `herdr-app ls`: the spaces with their tabs and terminals.
 export async function appSpaces($: $): Promise<AppSpace[]> {
-  const listed = await $.process.run(['sh', '-c', `${APP_PATH} exec "\${HERDR_APP_BIN:-herdr-app}" ls`], { timeoutMs: 10_000 })
-  return listed.exitCode === 0 ? ((JSON.parse(listed.stdout || '{}') as { spaces?: AppSpace[] }).spaces ?? []) : []
+  const result=await appCall($,['ls'])
+  return 'value' in result ? (result.value.spaces as AppSpace[] | undefined) ?? [] : []
 }
 
-// What `herdr-app status` says is on screen: the selected space and tab.
-async function appStatus($: $) {
-  const shown = await $.process.run(['sh', '-c', `${APP_PATH} exec "\${HERDR_APP_BIN:-herdr-app}" status`], { timeoutMs: 10_000 })
-  return shown.exitCode === 0 ? (JSON.parse(shown.stdout || '{}') as { space?: string; tab?: string; layout?: string }) : {}
+// What the Herdr window says is on screen.
+export async function appStatus($: $) {
+  const result=await appCall($,['status'])
+  return 'value' in result ? result.value as {space?:string;tab?:string;layout?:string} : {}
 }
 
 // The terminal, its pane, tab and space in the app's listing.
