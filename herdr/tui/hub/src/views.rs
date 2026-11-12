@@ -5,6 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
@@ -78,11 +79,29 @@ enum Dirty {
 }
 
 struct Sub {
+    id: u64,
+    window: bool,
     tx: Sender<String>,
     /// It shows the cockpit notifications (`subscribe {notify: true}`): one copy of the mod per window asks.
     notify: bool,
     /// Each view it follows: (name, args, the value last sent).
     views: Vec<(String, Value, Value)>,
+}
+
+impl Drop for Sub {
+    fn drop(&mut self) {
+        if self.window {
+            crate::window::gone(self.id);
+        }
+    }
+}
+
+pub fn window_sender() -> Option<(u64, Sender<String>)> {
+    subs().iter().rev().find(|s| s.window && s.notify).map(|s| (s.id, s.tx.clone()))
+}
+
+pub fn window_gone(id: u64) {
+    subs().retain(|s| s.id != id);
 }
 
 fn subs() -> MutexGuard<'static, Vec<Sub>> {
@@ -137,7 +156,9 @@ fn wanted(request: &Value) -> Vec<(String, Value)> {
 
 /// Sends the views now, then each new value of them, as {view, args, value} lines; also {focus, target} lines when
 /// the palette or a notification asks the view's app to bring something into view.
-pub fn subscribe(request: &Value, tx: Sender<String>) {
+pub fn subscribe(request: &Value, tx: Sender<String>) -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    let id = NEXT.fetch_add(1, Ordering::Relaxed);
     let views: Vec<(String, Value, Value)> = wanted(request)
         .into_iter()
         .map(|(name, args)| {
@@ -147,10 +168,12 @@ pub fn subscribe(request: &Value, tx: Sender<String>) {
         })
         .collect();
     let notify = request["notify"] == true;
+    let window = request["window"] == true;
     if !views.is_empty() || notify {
         dirty();
-        subs().push(Sub { tx, views, notify });
+        subs().push(Sub { id, window, tx, views, notify });
     }
+    id
 }
 
 /// Hands a notification {title, body, action, buttons} to the first window that shows them, as a {notify} line; false

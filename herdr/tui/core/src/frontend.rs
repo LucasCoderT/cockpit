@@ -15,6 +15,34 @@ use serde_json::{Value, json};
 
 use crate::files;
 
+/// Why a command for the Herdr window did not give an answer.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WindowError {
+    NoWindow,
+    MayHaveRun,
+    Failed(String),
+}
+
+impl WindowError {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::NoWindow => "no_window",
+            Self::MayHaveRun => "may_have_run",
+            Self::Failed(_) => "failed",
+        }
+    }
+}
+
+impl std::fmt::Display for WindowError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoWindow => f.write_str("no Herdr window is connected to this machine"),
+            Self::MayHaveRun => f.write_str("the Herdr window did not answer in time: the command may have run"),
+            Self::Failed(message) => f.write_str(message),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Frontend {
     Tui,

@@ -6,7 +6,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::time::Duration;
 
@@ -14,7 +14,7 @@ use cockpit_core::files;
 use cockpit_core::frontend::{self, Frontend};
 use serde_json::{Value, json};
 
-use crate::{act, feed, fetch, fetcher, go, history, names, search, store, views};
+use crate::{act, feed, fetch, fetcher, go, history, names, search, store, views, window};
 
 /// A connection the hub answers on: its unix socket, or TCP on 127.0.0.1 for the Herdr app's mod.
 pub trait Conn: Read + Write + Send + Sized + 'static {
@@ -48,7 +48,7 @@ pub struct Gate {
 
 /// Whether this gate turns the op away: off loopback, everything that is not a read.
 fn refused(gate: &Gate, op: &str) -> bool {
-    gate.read_only && !READS.contains(&op)
+    gate.read_only && !READS.contains(&op) && op != "window_reply"
 }
 
 pub fn now_secs() -> u64 {
@@ -64,8 +64,12 @@ pub fn serve<C: Conn>(stream: C, last: Arc<AtomicU64>, gate: Gate) {
     let Ok(mut writer) = stream.dup() else {
         return;
     };
-    for line in BufReader::new(stream).lines() {
-        let Ok(line) = line else { return };
+    let mut reader = BufReader::new(stream);
+    loop {
+        let mut line = String::new();
+        if !matches!(reader.read_line(&mut line), Ok(n) if n > 0) {
+            return;
+        }
         if line.trim().is_empty() {
             continue;
         }
@@ -75,10 +79,17 @@ pub fn serve<C: Conn>(stream: C, last: Arc<AtomicU64>, gate: Gate) {
                 let _ = writeln!(writer, "{}", json!({"error": "a request on TCP needs hub.json's token"}));
                 return;
             }
+            Ok(request) if gate.token.is_some() && ["window_token", "window"].contains(&request["op"].as_str().unwrap_or_default()) => {
+                json!({"error": format!("{} needs the unix socket", request["op"].as_str().unwrap_or_default())})
+            }
+            Ok(request) if request["op"] == "subscribe" && request["window"] == true && request["window_secret"].as_str() != Some(window::secret()) => {
+                let _ = writeln!(writer, "{}", json!({"error":"this window secret is not the hub's: ask `cockpit hub window-token` again"}));
+                return;
+            }
             Ok(request) if refused(&gate, request["op"].as_str().unwrap_or_default()) => {
                 json!({"error": "this cockpit hub serves reads only off loopback: start it without COCKPIT_HUB_LISTEN to write from this machine"})
             }
-            Ok(request) if request["op"] == "subscribe" => return subscribe(writer, &request),
+            Ok(request) if request["op"] == "subscribe" => return subscribe(writer, reader, &request),
             Ok(request) => {
                 let asked = request["frontend"].as_str().and_then(Frontend::parse).or(gate.frontend);
                 frontend::with(asked, || handle(&request))
@@ -94,21 +105,36 @@ pub fn serve<C: Conn>(stream: C, last: Arc<AtomicU64>, gate: Gate) {
 
 /// Writes the documents and views asked for, then each new version, until the other end goes; an empty line every half
 /// minute finds out when it did.
-fn subscribe<C: Conn>(mut writer: C, request: &Value) {
+fn subscribe<C: Conn>(mut writer: C, mut reader: BufReader<C>, request: &Value) {
     let names: Vec<String> =
         request["docs"].as_array().into_iter().flatten().filter_map(Value::as_str).filter(|n| store::is_doc(n)).map(str::to_string).collect();
     let (tx, rx) = channel();
     if !names.is_empty() {
         store::global().subscribe(names, tx.clone());
     }
-    views::subscribe(request, tx);
+    let id = views::subscribe(request, tx.clone());
+    let gone = Arc::new(AtomicBool::new(false));
+    std::thread::spawn({
+        let gone = gone.clone();
+        move || {
+            let mut buf = [0];
+            while matches!(reader.read(&mut buf), Ok(n) if n > 0) {}
+            views::window_gone(id);
+            gone.store(true, Ordering::Release);
+            let _ = tx.send(String::new());
+        }
+    });
     loop {
         let line = match rx.recv_timeout(Duration::from_secs(30)) {
             Ok(line) => line,
             Err(RecvTimeoutError::Timeout) => String::new(),
             Err(RecvTimeoutError::Disconnected) => return,
         };
+        if gone.load(Ordering::Acquire) {
+            return;
+        }
         if writeln!(writer, "{line}").and_then(|_| writer.flush()).is_err() {
+            views::window_gone(id);
             views::prune();
             return;
         }
@@ -125,6 +151,22 @@ pub fn handle(request: &Value) -> Value {
     let field = |name: &str| request[name].as_str().unwrap_or_default();
     match field("op") {
         "ping" => json!({"ok": true}),
+        "window_token" => json!({"secret":window::secret()}),
+        "window" => match window::call(field("cmd"), field("command"), &request["args"], Duration::from_secs(10)) {
+            Ok(value) => json!({"value":value}),
+            Err(error) => json!({"error":error.to_string(),"kind":error.kind()}),
+        },
+        "window_reply" => {
+            let outcome = match request["error"].as_str() {
+                Some(error) => Err(error.to_string()),
+                None => Ok(request["value"].clone()),
+            };
+            if window::reply(request["id"].as_u64().unwrap_or(0), field("secret"), outcome) {
+                json!({"ok":true})
+            } else {
+                json!({"error":"unknown, expired or unauthorized window reply"})
+            }
+        }
         "act" => {
             let args = request["args"].as_array().cloned().unwrap_or_default();
             let armed = request["armed"].as_str().map(str::to_string);
@@ -216,7 +258,7 @@ mod tests {
 
     #[test]
     fn a_read_only_gate_turns_away_everything_that_writes() {
-        for op in ["ping", "view", "search", "fetch", "events", "history", "shown", "subscribe"] {
+        for op in ["ping", "view", "search", "fetch", "events", "history", "shown", "subscribe", "window_reply"] {
             assert!(!refused(&gate(true), op), "{op} only reads");
         }
         for op in ["act", "go", "notify", "store.put", "store.patch", "store.lease", "store.release", "dance", ""] {

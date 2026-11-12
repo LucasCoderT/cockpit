@@ -19,6 +19,7 @@ mod server;
 pub mod store;
 mod value;
 pub mod views;
+mod window;
 
 use std::io::Write;
 use std::net::TcpListener;
@@ -106,7 +107,7 @@ pub fn tcp_file() -> PathBuf {
 }
 
 /// A random token from the system's source, as hex.
-fn token() -> std::io::Result<String> {
+pub(crate) fn token() -> std::io::Result<String> {
     let mut bytes = [0u8; 16];
     std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut bytes)?;
     Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())

@@ -23,6 +23,150 @@ fn ping() {
     assert_eq!(hub.request(&json!({"op": "ping"})), json!({"ok": true}));
 }
 
+fn window_tcp(sandbox: &Sandbox) -> (std::io::BufReader<std::net::TcpStream>, Value) {
+    let path = sandbox.home().join(".cache/cockpit/hub.json");
+    let start = Instant::now();
+    let info: Value = loop {
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            break serde_json::from_str(&text).unwrap();
+        }
+        assert!(start.elapsed() < Duration::from_secs(5));
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    let stream = std::net::TcpStream::connect(("::1", info["port"].as_u64().unwrap() as u16)).unwrap();
+    stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+    (std::io::BufReader::new(stream), info)
+}
+
+fn window_read(stream: &mut std::io::BufReader<std::net::TcpStream>) -> Value {
+    use std::io::BufRead;
+    loop {
+        let mut line = String::new();
+        assert_ne!(stream.read_line(&mut line).unwrap(), 0, "window disconnected");
+        if !line.trim().is_empty() {
+            return serde_json::from_str(&line).unwrap();
+        }
+    }
+}
+
+fn window_subscribe(sandbox: &Sandbox, secret: &str) -> std::io::BufReader<std::net::TcpStream> {
+    use std::io::Write;
+    let (mut stream, info) = window_tcp(sandbox);
+    writeln!(
+        stream.get_mut(),
+        "{}",
+        json!({"op":"subscribe", "docs":["inbox"], "notify":true, "window":true,
+        "window_secret":secret, "token":info["token"]})
+    )
+    .unwrap();
+    assert_eq!(window_read(&mut stream)["doc"], "inbox");
+    stream
+}
+
+#[test]
+fn window_without_a_connected_window_answers_no_window_at_once() {
+    let sandbox = sandbox();
+    let hub = Hub::start(&sandbox, &[]);
+    let start = Instant::now();
+    assert_eq!(hub.request(&json!({"op":"window","cmd":"ls"}))["kind"], "no_window");
+    assert!(start.elapsed() < Duration::from_secs(1));
+}
+
+#[test]
+fn window_token_is_refused_on_tcp_and_given_on_the_socket() {
+    use std::io::Write;
+    let sandbox = sandbox();
+    let hub = Hub::start(&sandbox, &[("COCKPIT_HUB_LISTEN", "::1")]);
+    let secret = hub.request(&json!({"op":"window_token"}))["secret"].as_str().unwrap().to_string();
+    assert_eq!(secret.len(), 64);
+    assert!(secret.bytes().all(|b| b.is_ascii_hexdigit()));
+    let (mut stream, info) = window_tcp(&sandbox);
+    for op in ["window_token", "window"] {
+        writeln!(stream.get_mut(), "{}", json!({"op":op,"cmd":"ls","token":info["token"]})).unwrap();
+        assert!(window_read(&mut stream)["error"].is_string());
+    }
+    assert!(!std::fs::read_to_string(sandbox.home().join(".cache/cockpit/hub.json")).unwrap().contains(&secret));
+}
+
+#[test]
+fn a_window_subscription_needs_the_window_secret() {
+    use std::io::Write;
+    let sandbox = sandbox();
+    let hub = Hub::start(&sandbox, &[("COCKPIT_HUB_LISTEN", "::1")]);
+    let (mut stream, info) = window_tcp(&sandbox);
+    writeln!(stream.get_mut(), "{}", json!({"op":"subscribe","window":true,"window_secret":"nope","token":info["token"]})).unwrap();
+    assert!(window_read(&mut stream)["error"].is_string());
+    let secret = hub.request(&json!({"op":"window_token"}));
+    let _window = window_subscribe(&sandbox, secret["secret"].as_str().unwrap());
+}
+
+#[test]
+fn a_window_command_reaches_the_window_and_its_reply_comes_back() {
+    use std::io::Write;
+    let sandbox = sandbox();
+    let hub = Hub::start(&sandbox, &[("COCKPIT_HUB_LISTEN", "::1")]);
+    let secret = hub.request(&json!({"op":"window_token"}))["secret"].as_str().unwrap().to_string();
+    let mut window = window_subscribe(&sandbox, &secret);
+    let socket = sandbox.socket();
+    let caller = std::thread::spawn(move || request_on(&socket, &json!({"op":"window","cmd":"do","command":"pane.focus","args":{"terminal":"t3"}})));
+    let command = window_read(&mut window)["window"].clone();
+    assert_eq!(command["command"], "pane.focus");
+    assert_eq!(command["args"], json!({"terminal":"t3"}));
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+    assert!((9_000..=11_000).contains(&(command["deadline"].as_u64().unwrap() - now)));
+    let (mut reply, info) = window_tcp(&sandbox);
+    let request = json!({"op":"window_reply","id":command["id"],"secret":secret,"value":{"ok":true},"token":info["token"]});
+    let mut wrong = request.clone();
+    wrong["secret"] = json!("wrong");
+    writeln!(reply.get_mut(), "{wrong}").unwrap();
+    assert!(window_read(&mut reply)["error"].is_string());
+    let mut unknown = request.clone();
+    unknown["id"] = json!(999);
+    writeln!(reply.get_mut(), "{unknown}").unwrap();
+    assert!(window_read(&mut reply)["error"].is_string());
+    writeln!(reply.get_mut(), "{request}").unwrap();
+    assert_eq!(window_read(&mut reply), json!({"ok":true}));
+    assert_eq!(caller.join().unwrap(), json!({"value":{"ok":true}}));
+    writeln!(reply.get_mut(), "{request}").unwrap();
+    assert!(window_read(&mut reply)["error"].is_string());
+}
+
+#[test]
+fn a_window_that_goes_away_fails_its_pending_command_as_may_have_run() {
+    let sandbox = sandbox();
+    let hub = Hub::start(&sandbox, &[("COCKPIT_HUB_LISTEN", "::1")]);
+    let secret = hub.request(&json!({"op":"window_token"}));
+    let mut window = window_subscribe(&sandbox, secret["secret"].as_str().unwrap());
+    let socket = sandbox.socket();
+    let caller = std::thread::spawn(move || request_on(&socket, &json!({"op":"window","cmd":"ls"})));
+    assert!(window_read(&mut window)["window"].is_object());
+    let start = Instant::now();
+    drop(window);
+    assert_eq!(caller.join().unwrap()["kind"], "may_have_run");
+    assert!(start.elapsed() < Duration::from_secs(2));
+}
+
+#[test]
+fn the_last_window_to_subscribe_gets_the_commands() {
+    let sandbox = sandbox();
+    let hub = Hub::start(&sandbox, &[("COCKPIT_HUB_LISTEN", "::1")]);
+    let secret_value = hub.request(&json!({"op":"window_token"}));
+    let secret = secret_value["secret"].as_str().unwrap();
+    let mut first = window_subscribe(&sandbox, secret);
+    let mut second = window_subscribe(&sandbox, secret);
+    for (stream, key) in [(&mut second, "second"), (&mut first, "first")] {
+        let socket = sandbox.socket();
+        let caller = std::thread::spawn(move || request_on(&socket, &json!({"op":"window","cmd":"status"})));
+        let command = window_read(stream)["window"].clone();
+        hub.request(&json!({"op":"window_reply","id":command["id"],"secret":secret,"value":{key:true}}));
+        assert_eq!(caller.join().unwrap()["value"][key], true);
+        if key == "second" {
+            stream.get_ref().shutdown(std::net::Shutdown::Both).unwrap();
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+}
+
 #[test]
 fn tcp_on_an_explicit_interface_authenticates_and_streams_inbox_updates() {
     use std::io::{BufRead, BufReader, Write};
