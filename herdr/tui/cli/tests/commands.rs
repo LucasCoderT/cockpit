@@ -772,3 +772,51 @@ fn doctor_tells_the_hub_fetches_the_calendar_without_printing_its_address() {
     let printed = stdout(&sandbox.cockpit(&["doctor", "--all"], &[]));
     assert!(printed.contains("warn  calendar.ics is set but the calendar is off"), "{printed}");
 }
+
+#[test]
+fn window_ls_without_a_window_exits_3() {
+    let sandbox = Sandbox::new();
+    let seen = fake_hub(&sandbox, Some(json!({"error":"no Herdr window is connected to this machine","kind":"no_window"})));
+    let out = sandbox.cockpit(&["window", "ls"], &[]);
+    assert_eq!(out.status.code(), Some(3), "{}", stderr(&out));
+    assert!(stderr(&out).contains("no Herdr window"));
+    assert_eq!(seen.lock().unwrap()[0]["op"], "window");
+    assert_eq!(seen.lock().unwrap()[0]["cmd"], "ls");
+}
+
+#[test]
+fn window_do_prints_the_windows_answer() {
+    let sandbox = Sandbox::new();
+    let seen = fake_hub(&sandbox, Some(json!({"value":{"pane":"p9"}})));
+    let out = sandbox.cockpit(&["window", "do", "pane.split", r#"{"pane":"p1"}"#], &[]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(serde_json::from_str::<Value>(&stdout(&out)).unwrap(), json!({"pane":"p9"}));
+    assert_eq!(seen.lock().unwrap()[0], json!({"op":"window","cmd":"do","command":"pane.split","args":{"pane":"p1"}}));
+}
+
+#[test]
+fn window_may_have_run_exits_4() {
+    let sandbox = Sandbox::new();
+    fake_hub(&sandbox, Some(json!({"error":"the command may have run","kind":"may_have_run"})));
+    assert_eq!(sandbox.cockpit(&["window", "status"], &[]).status.code(), Some(4));
+}
+
+#[test]
+fn window_uses_a_local_herdr_app_when_there_is_one() {
+    let sandbox = Sandbox::new();
+    let bin = sandbox.root.join("bin/herdr-app");
+    executable(&bin, &format!("#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\nprintf '%s\\n' '{{\"pane\":\"p3\"}}'\n", sandbox.log().display()));
+    let out = sandbox.cockpit(&["window", "do", "pane.focus", r#"{"terminal":"t3"}"#], &[("HERDR_APP_BIN", bin.to_str().unwrap())]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(serde_json::from_str::<Value>(&stdout(&out)).unwrap(), json!({"pane":"p3"}));
+    assert!(sandbox.calls().contains(&r#"do pane.focus {"terminal":"t3"}"#.to_string()));
+}
+
+#[test]
+fn hub_window_token_prints_the_secret() {
+    let sandbox = Sandbox::new();
+    fake_hub(&sandbox, Some(json!({"secret":"acme-secret"})));
+    let out = sandbox.cockpit(&["hub", "window-token"], &[]);
+    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(serde_json::from_str::<Value>(&stdout(&out)).unwrap(), json!({"secret":"acme-secret"}));
+}
