@@ -2,9 +2,10 @@
 // connection, and subscriptions that come back by themselves when the hub restarts.
 
 import net from "net";
-import { exec, appHome, readTextFile, run, window as win, home, panes } from "herdr";
+import { exec, appHome, readTextFile, run, window as win, panes } from "herdr";
 import { argsToRunner, toRunner } from "./address.js";
 import { runWindowCommand } from "./window.js";
+import { herdrApp } from "./herdr-app.js";
 
 /** Closes a socket, already closed or not: a throw here would end the subscription that is tidying up. */
 const close = (socket) => {
@@ -322,7 +323,7 @@ export function subscribe(cx, { views = [], docs = [], notify = false, focus = n
               },
             } : undefined;
             const outcome = await runWindowCommand(message.window, {machine:remote,run,clipboard,focus:focusHere,panes,
-              herdrApp: argv => exec("env", [`HERDR_APP_HOME=${appHome()}`, `${home()}/.local/bin/herdr-app`, ...argv])});
+              herdrApp});
             // A late answer can be refused without invalidating this window's live subscription.
             try { await windowReply(message.window.id, secret, message.window.capability, outcome); } catch {}
             continue;
