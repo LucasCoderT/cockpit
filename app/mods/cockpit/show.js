@@ -7,6 +7,7 @@ import { div, image, PathBuilder } from "gpui-kit";
 import { h_flex, v_flex, v_virtual_list, Scrollbar, InputState, Input, TextView } from "gpui-base";
 import { exec, appHome, focused, panes, run, layout, shared, setShared, props, settings, window as win } from "herdr";
 import * as hub from "./hub.js";
+import { toRunner } from "./address.js";
 import { tokens, alpha, TEXT, RADIUS, Icon, Badge, Button, Kbd, Empty, Toaster, Progress, Spinner, openMenu, dur } from "./ui.js";
 import { Chart, Figures, zoomed, compact } from "./plot.js";
 import { parseFlowchart, flowGraph, laidOut, Graph, graphSize, Sequence, sequenceSize, fit } from "./diagram.js";
@@ -88,7 +89,12 @@ export default class Show {
       const text = this.other.value().trim();
       if (n !== null && text) this.answer(cx, n, "choice", text, text);
     });
-    this.subscribe(cx);
+    this.machine = undefined;
+    cx.spawn(async cx => {
+      this.machine = (await hub.install().catch(()=>({}))).machine ?? null;
+      this.subscribe(cx);
+      cx.notify();
+    });
     cx.timer.every(1000, (cx) => this.tick(cx));
     if (this.name) {
       // A pane split from the agent's is focused for a moment: that is how this copy learns which pane it is.
@@ -116,11 +122,12 @@ export default class Show {
   }
 
   subscribe(cx) {
+    if (this.machine === undefined) return;
     try {
       if (this.panel) localStorage.setItem("show.pick", this.pick ?? "");
     } catch {}
     this.sub?.stop();
-    const args = this.name ? { name: this.name } : { terminal: this.terminal, pick: this.pick };
+    const args = this.name ? { name: this.name } : { terminal: this.terminal ? toRunner(this.terminal,this.machine) : null, pick: this.pick };
     this.sub = hub.subscribe(
       cx,
       { views: [{ name: "show", args }], focus: this.panel ? "show" : null },
@@ -233,6 +240,10 @@ export default class Show {
   /** A picture copied into the app's folder (it draws pictures only from there), with its size. */
   ensure(pic, cx) {
     if (!pic?.key || this.images.has(pic.key)) return;
+    if (this.machine && !pic.remote) {
+      this.images.set(pic.key,{state:"failed",error:`Image on ${this.machine}: ${pic.src}`});
+      return;
+    }
     this.images.set(pic.key, { state: "loading" });
     const rel = `data/cockpit/show/${pic.key}`;
     const fetch = pic.remote ? 'curl -fsSL --max-time 20 -o "$1" "$2"' : 'cp "$2" "$1"';
