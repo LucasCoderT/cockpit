@@ -40,6 +40,7 @@ async function fixture(t, remote = true, globals = {}, host = "127.0.0.1") {
     herdr: {
       appHome: () => "C:/Herdr",
       home: () => "C:/Users/Sam",
+      panes: () => [],
       window: () => ({ platform: "windows", active: true }),
       run: (...args) => calls.push(["run", ...args]),
       readTextFile: async (path, options) => {

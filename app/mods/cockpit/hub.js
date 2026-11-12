@@ -2,7 +2,7 @@
 // connection, and subscriptions that come back by themselves when the hub restarts.
 
 import net from "net";
-import { exec, appHome, readTextFile, run, window as win, home } from "herdr";
+import { exec, appHome, readTextFile, run, window as win, home, panes } from "herdr";
 import { argsToRunner, toRunner } from "./address.js";
 import { runWindowCommand } from "./window.js";
 
@@ -321,7 +321,7 @@ export function subscribe(cx, { views = [], docs = [], notify = false, focus = n
                 if (r.code !== 0) throw new Error("could not write the desktop clipboard");
               },
             } : undefined;
-            const outcome = await runWindowCommand(message.window, {machine:remote,run,clipboard,focus:focusHere,
+            const outcome = await runWindowCommand(message.window, {machine:remote,run,clipboard,focus:focusHere,panes,
               herdrApp: argv => exec("env", [`HERDR_APP_HOME=${appHome()}`, `${home()}/.local/bin/herdr-app`, ...argv])});
             // A late answer can be refused without invalidating this window's live subscription.
             try { await windowReply(message.window.id, secret, message.window.capability, outcome); } catch {}
