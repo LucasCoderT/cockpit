@@ -508,3 +508,47 @@ fn server_item_navigation_reaches_the_authenticated_window() {
     hub.request(&json!({"op":"window_reply","id":cmd["id"],"secret":secret,"capability":cmd["capability"],"value":{}}));
     assert_eq!(caller.join().unwrap()["ok"], true);
 }
+
+#[test]
+fn app_navigation_without_a_capable_window_returns_no_window() {
+    for old_mod in [false, true] {
+        use std::io::{BufRead, BufReader, Write};
+        let sandbox = sandbox();
+        let hub = Hub::start(&sandbox, &[]);
+        let mut old = std::os::unix::net::UnixStream::connect(sandbox.socket()).unwrap();
+        if old_mod {
+            writeln!(old, "{}", json!({"op":"subscribe","notify":true,"docs":["inbox"]})).unwrap();
+            let mut first = String::new();
+            BufReader::new(old.try_clone().unwrap()).read_line(&mut first).unwrap();
+        }
+        let start = Instant::now();
+        let result = hub.request(&json!({"op":"go","frontend":"app","target":{"app":"runbook","key":"eng-412","steps":["2"]}}));
+        assert_eq!(result["kind"], "no_window", "{result}");
+        assert!(start.elapsed() < Duration::from_secs(1));
+    }
+}
+
+#[test]
+fn app_navigation_uses_a_local_window_and_reports_a_local_refusal() {
+    use std::os::unix::fs::PermissionsExt;
+    for available in [true, false] {
+        let sandbox = sandbox();
+        let app = sandbox.root.join("bin/herdr-app");
+        let script = if available {
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$COCKPIT_TEST_DIR/window.log\"\nif [ \"$1\" = status ]; then printf '%s\\n' '{\"layout\":\"cockpit\"}'; else printf '%s\\n' '{}'; fi\n"
+        } else {
+            "#!/bin/sh\nexit 1\n"
+        };
+        std::fs::write(&app, script).unwrap();
+        std::fs::set_permissions(&app, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let hub = Hub::start(&sandbox, &[("HERDR_APP_BIN", app.to_str().unwrap())]);
+        let result = hub.request(&json!({"op":"go","frontend":"app","target":{"app":"runbook","key":"eng-412"}}));
+        if available {
+            assert_eq!(result["ok"], true, "{result}");
+            assert!(std::fs::read_to_string(sandbox.root.join("window.log")).unwrap().contains("do cockpit.go:runbook"));
+        } else {
+            assert_eq!(result["kind"], "failed", "{result}");
+            assert!(result["ok"].is_null());
+        }
+    }
+}

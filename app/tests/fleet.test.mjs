@@ -3,13 +3,14 @@ import { readFile, readdir } from "node:fs/promises";
 import { createContext, SourceTextModule, SyntheticModule } from "node:vm";
 import { test } from "node:test";
 
-async function fixture() {
+async function fixture(desktop = {}) {
   const calls = [], notices = [];
   const context = createContext({ console });
   const imports = {
     herdr: {
       agents: () => [{ address: "t7", tab: "tab7", space: "s1", status: "working", title: "Local agent" }],
-      spaces: () => [{ id: "s1", tabs: [{ id: "tab7" }] }],
+      spaces: () => desktop.spaces ?? [{ id: "s1", tabs: [{ id: "tab7" }] }],
+      panes: () => desktop.panes ?? [],
       run: (...args) => calls.push(args),
       setShared: (...args) => calls.push(["shared", ...args]),
       notify: notice => notices.push(notice),
@@ -74,7 +75,7 @@ test("local agents retain their metadata join and navigation", async () => {
   assert.equal(f.notices.length, 0);
 });
 
-test("remote Go, Peek and Open beside navigate to the runner's terminal; Archive stays refused", async () => {
+test("remote Go, Peek and Open beside navigate to the runner's terminal; an agent absent from this desktop cannot be archived", async () => {
   const f = await fixture();
   const model = { remote: "runner", agents: [{ address: "t7", terminal: "app:t7", title: "Runner agent", tab: { id: "tab7" } }] };
   const agents = Object.create(f.fleet.AgentsModel.prototype);
@@ -119,4 +120,38 @@ test("local Go, Peek, Open beside and Archive handlers retain their commands", a
   assert.deepEqual(f.calls.map(c => c[0]), ["agent.focus", "layout.select", "terminal.peek", "agent.focus", "layout.show", "tab.settle", "tab.settle"]);
   assert.equal(f.calls.at(-1)[1].id, "tab7");
   assert.equal(f.notices.length, 0);
+});
+
+
+test("remote Archive uses the owning desktop tab and Undo restores that tab", async () => {
+ const desktop={spaces:[{id:"local",machine:null,tabs:[{id:"tab7"}]},{id:"remote",machine:"runner",tabs:[{id:"mac-tab9"}]}],
+  panes:[{terminal:"t7",tab:"tab7"},{terminal:"runner/t7",tab:"mac-tab9"}]};
+ const f=await fixture(desktop),home=new f.fleet.Home(),toasts=[];
+ home.toasts={push:(_cx,_text,options)=>toasts.push(options)};
+ const agent={remote:"runner",address:"runner/t7",tab:"tab7",title:"ENG-412"};
+ home.archive({notify(){}},agent);
+ assert.equal(f.calls.at(-1)[0],"tab.settle");assert.equal(f.calls.at(-1)[1].id,"mac-tab9");
+ toasts[0].action.onClick();assert.equal(f.calls.at(-1)[0],"tab.unsettle");assert.equal(f.calls.at(-1)[1].id,"mac-tab9");
+ desktop.spaces[1].tabs[0].settled=true;
+ home.rows={remote:"runner",agents:[{address:"t7",title:"ENG-412",tab:{id:"tab7"}}]};home.home={};home.stages=new Map();
+ assert.equal(home.cards()[0].archived,true);
+ assert.equal(f.calls.some(c=>c[0]==="tab.settle" && c[1].id==="tab7"),false);
+});
+
+test("Archive all maps remote tabs, deduplicates them and supports Undo",async()=>{
+ const f=await fixture({spaces:[{id:"remote",machine:"runner",tabs:[{id:"mac-tab9"}]}],
+  panes:[{terminal:"runner/t7",tab:"mac-tab9"},{terminal:"runner/t8",tab:"mac-tab9"}]}),home=new f.fleet.Home(),toasts=[];
+ home.toasts={push:(_cx,_text,options)=>toasts.push(options)};
+ home.archiveAll({notify(){}},[{agent:{remote:"runner",address:"runner/t7",tab:"tab7"}},
+  {agent:{remote:"runner",address:"runner/t8",tab:"tab8"}},{agent:{address:"t9",tab:"local-tab9"}}]);
+ assert.deepEqual(f.calls.filter(c=>c[0]==="tab.settle").map(c=>c[1].id),["mac-tab9","local-tab9"]);
+ toasts[0].action.onClick();
+ assert.deepEqual(f.calls.filter(c=>c[0]==="tab.unsettle").map(c=>c[1].id),["mac-tab9","local-tab9"]);
+});
+
+test("remote Archive refuses a terminal found only in a local or another machine's space",async()=>{
+ const f=await fixture({spaces:[{id:"local",machine:null,tabs:[{id:"tab7"}]}],panes:[{terminal:"runner/t7",tab:"tab7"}]}),home=new f.fleet.Home();
+ home.archive({notify(){}},{remote:"runner",address:"runner/t7",tab:"tab7",title:"ENG-412"});
+ assert.equal(f.calls.some(c=>c[0]==="tab.settle"),false);
+ assert.equal(f.notices[0].title.includes("Read-only"),false);
 });

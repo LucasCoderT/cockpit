@@ -147,9 +147,9 @@ export default class Show {
   updateBadge() {
     if (!this.panel) return;
     this.updates ??= new UpdateBadge();
-    const entries = new Map((this.data?.views ?? []).map(v=>[v.name,String(v.at)]));
+    const entries = new Map((this.data?.views ?? []).map(v=>[v.name,String(v.revision ?? v.at)]));
     const view = this.data?.view;
-    if (view) entries.set(view.name,JSON.stringify(view));
+    if (view && !(this.data?.views ?? []).find(v=>v.name===view.name)?.revision) entries.set(view.name,JSON.stringify(view));
     const changed = this.updates.take(entries,panelVisible(layout(),"show"));
     const asks = (this.data?.views ?? []).reduce((n,v)=>n+(v.asks ?? 0),0);
     const badge = changed+asks ? {count:changed+asks,tone:asks?"warning":"info"} : null;

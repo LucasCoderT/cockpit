@@ -98,7 +98,7 @@ function presentation(windowCode = 0) {
       if(argv.join(' ').includes('command -v')) return ran(1);
       if(argv.includes('browse') || argv.some(a=>a.endsWith('/browse.sh'))) return ran(3);
       if(argv[0]==='herdr'&&argv[2]==='split') return ran(0,'{"result":{"pane":{"pane_id":"w1:p2"}}}');
-      if(argv.includes('window')) return {...ran(windowCode,argv.includes('pane.split')?'{"pane":"p9"}':'{}'),stderr:windowCode?'no Herdr window is connected to this machine':''};
+      if(argv.includes('window')) return {...ran(windowCode,argv.includes('pane.split')?'{"pane":"p9"}':argv.at(-1)==='ls'?JSON.stringify({spaces:[{id:'s1',tabs:[{id:'tab1',terminals:[{terminal:'t14',pane:'p14'}]}]}]}):'{}'),stderr:windowCode?'no Herdr window is connected to this machine':''};
       return ran(0,'{}');
     }},
   } as unknown as Parameters<typeof present>[0];
@@ -126,9 +126,9 @@ test('a new view opens Documents beside the session in the app',async()=>{
  expect(f.calls.filter(a=>a.includes('do')).map(a=>a[a.indexOf('do')+1])).toEqual(['pane.focus','cockpit.panel-open:show:new-quota'])
 })
 test('an update only rewrites the view',async()=>{
- const f=presentation();await present(f.$,'existing-quota',quotaSpec,appHere);const count=f.calls.length
+ const f=presentation();await present(f.$,'existing-quota',quotaSpec,appHere);const count=f.calls.filter(a=>a.includes('do')).length
  const answer=await present(f.$,'existing-quota',quotaSpec,appHere)
- expect('result' in answer && answer.result).toBe('Updated existing-quota in Documents.');expect(f.calls.length).toBe(count)
+ expect('result' in answer && answer.result).toBe('Updated existing-quota in Documents.');expect(f.calls.filter(a=>a.includes('do')).length).toBe(count)
 })
 test('down still splits a pane',async()=>{
  const f=presentation();await present(f.$,'down-quota',{...quotaSpec,placement:'down'},appHere)
@@ -163,4 +163,27 @@ test('Documents are live to source refresh and footer navigation without split m
  await toggleView(f.$,name,appHere);
  expect(f.calls.some(a=>a.includes(`cockpit.panel-open:show:${name}`))).toBe(true);
  expect(f.calls.some(a=>a.includes('pane.split'))).toBe(false);
+});
+
+test('repeated show with no window reports storage without claiming Documents presentation',async()=>{
+ for(const placement of [undefined,'browser'] as const) {
+  const f=presentation(3),name=placement?'offline-browser':'offline-quota',spec={...quotaSpec,placement};
+  for(let n=0;n<2;n++) {
+   const answer=await present(f.$,name,spec,undefined);
+   expect('result' in answer && answer.result).toContain('No Herdr window is connected');
+   expect('result' in answer && answer.result.includes('is in Documents instead')).toBe(false);
+   expect('result' in answer && answer.result.includes('Updated ')).toBe(false);
+  }
+  expect(f.files.has(`${DIR}/${name}.json`)).toBe(true);
+  expect(f.calls.some(a=>a.includes('do'))).toBe(false);
+ }
+});
+
+test('an existing document checks its terminal without switching the window',async()=>{
+ const f=presentation();
+ const run=f.$.process.run;f.$.process.run=async(argv,opts)=>argv.at(-1)==='ls'?ran(0,'{"spaces":[]}'):run(argv,opts);
+ f.files.set(`${DIR}/missing-terminal.json`,JSON.stringify(quotaSpec));
+ const answer=await present(f.$,'missing-terminal',quotaSpec,appHere);
+ expect('result' in answer && answer.result).toContain("could not find this session's terminal");
+ expect(f.calls.some(a=>a.includes('do'))).toBe(false);
 });

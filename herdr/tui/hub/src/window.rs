@@ -82,9 +82,10 @@ mod tests {
     #[test]
     fn an_expired_window_command_cannot_be_answered() {
         let (tx, rx) = channel();
+        tx.send(String::new()).unwrap();
         let sub = crate::views::subscribe(&json!({"notify":true,"window":true}), tx);
         assert_eq!(call("ls", "", &Value::Null, Duration::from_millis(5)), Err(WindowError::MayHaveRun));
-        let command: Value = serde_json::from_str(&rx.recv().unwrap()).unwrap();
+        let command: Value = serde_json::from_str(&rx.iter().find(|line| !line.is_empty()).unwrap()).unwrap();
         assert!(!reply(command["window"]["id"].as_u64().unwrap(), secret(), command["window"]["capability"].as_str().unwrap(), Ok(json!({}))));
         crate::views::window_gone(sub);
     }

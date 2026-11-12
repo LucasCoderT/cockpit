@@ -472,7 +472,28 @@ pub fn show(input: &Value, here: Option<&Here>, session: &str) -> Result<String,
         frontend::WindowError::Failed(why) => format!("Wrote the view to {}. {why}", path.display()),
     };
     let mut said = if documents && existed {
-        if asked == "browser" { format!("No browser beside this session: {name} is in Documents instead.") } else { format!("Updated {name} in Documents.") }
+        let terminal = here.and_then(Here::terminal).map(str::to_string).or_else(|| std::env::var("HC_TERMINAL_ID").ok());
+        match frontend::window("ls", "", &Value::Null) {
+            Err(err) => error(err),
+            Ok(listed) => {
+                let found = terminal.as_ref().is_some_and(|terminal| {
+                    listed["spaces"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .flat_map(|space| space["tabs"].as_array().into_iter().flatten())
+                        .flat_map(|tab| tab["terminals"].as_array().into_iter().flatten())
+                        .any(|entry| entry["terminal"] == terminal.as_str())
+                });
+                if !found {
+                    format!("Wrote the view to {}. The connected Herdr window could not find this session's terminal.", path.display())
+                } else if asked == "browser" {
+                    format!("No browser beside this session: {name} is in Documents instead.")
+                } else {
+                    format!("Updated {name} in Documents.")
+                }
+            }
+        }
     } else if documents {
         if let Some(Here::App { terminal, .. }) = here {
             let shown = frontend::window("do", "pane.focus", &json!({"terminal":terminal}))

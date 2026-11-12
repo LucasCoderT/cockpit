@@ -203,7 +203,8 @@ pub fn set_relay(f: Relay) {
     let _ = RELAY.set(f);
 }
 
-fn local_app() -> bool {
+/// Whether this machine has the local Herdr app command.
+pub fn local_app() -> bool {
     static LOCAL: OnceLock<bool> = OnceLock::new();
     *LOCAL.get_or_init(|| {
         let name = program("herdr-app", "HERDR_APP_BIN");

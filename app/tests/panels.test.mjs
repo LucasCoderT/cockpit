@@ -67,3 +67,11 @@ test('hidden Runbook updates set a badge that clears when the tab is viewed',asy
  f.view.tree.hidden=false;f.view.tree.children[0].active='runbook-panel';book.updateBadge();
  assert.equal(f.state['badge.runbook'],null);
 });
+test('an unselected blueprint revision lights the Documents badge without changing the selected document',async()=>{
+ const f=await fixture(),show=new f.mod.Show();show.panel=true;
+ const selected={name:'quota',at:2,blocks:[]};
+ show.data={views:[{name:'quota',at:2,revision:'quota-1'},{name:'blueprint',at:1,revision:'plan-1'}],view:selected};show.updateBadge();
+ show.data={views:[{name:'quota',at:2,revision:'quota-1'},{name:'blueprint',at:1,revision:'plan-2'}],view:selected};show.updateBadge();
+ assert.equal(f.state['badge.show'].count,1);
+ assert.equal(show.data.view.name,'quota');
+});

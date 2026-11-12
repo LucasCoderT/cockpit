@@ -2,6 +2,7 @@
 //! data of a block that runs something: a diff read, a log, a command's rows) and the answers written back for the
 //! plugin to hand to the session, the same `<name>.<block>.answer` files the TUI app writes.
 
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use cockpit_core::files;
@@ -36,18 +37,21 @@ fn valid(name: &str) -> bool {
 /// `{name}`: that view; `{terminal}`: the views that terminal's session showed, newest first, with the newest (or
 /// `{pick}`) in full; nothing: every recent view the same way.
 pub fn view(args: &Value, _doc: &dyn Fn(&str) -> Value) -> Value {
-    let caches = Caches::read();
+    view_in(&dir(), args, &Caches::read())
+}
+
+fn view_in(dir: &Path, args: &Value, caches: &Caches) -> Value {
     if let Some(name) = args["name"].as_str() {
         if !valid(name) {
             return json!({"error": format!("no view named {name:?}")});
         }
-        let spec = files::load(&dir().join(format!("{name}.json")));
-        return json!({"views": [], "view": spec.map(|s| model(name, &s, &caches))});
+        let spec = files::load(&dir.join(format!("{name}.json")));
+        return json!({"views": [], "view": spec.map(|s| model_in(dir, name, &s, caches))});
     }
-    let listed = listed(&dir(), args["terminal"].as_str());
+    let listed = listed(dir, args["terminal"].as_str());
     let pick = args["pick"].as_str().filter(|p| listed.iter().any(|(n, _)| n == p)).map(str::to_string).or_else(|| listed.first().map(|(n, _)| n.clone()));
-    let views: Vec<Value> = listed.iter().map(|(name, spec)| summary(name, spec)).collect();
-    let view = pick.and_then(|p| listed.iter().find(|(n, _)| *n == p).map(|(n, s)| model(n, s, &caches)));
+    let views: Vec<Value> = listed.iter().map(|(name, spec)| summary(dir, name, spec)).collect();
+    let view = pick.and_then(|p| listed.iter().find(|(n, _)| *n == p).map(|(n, s)| model_in(dir, n, s, caches)));
     json!({"views": views, "view": view})
 }
 
@@ -74,11 +78,17 @@ fn listed(dir: &Path, terminal: Option<&str>) -> Vec<(String, Value)> {
     all
 }
 
-fn summary(name: &str, spec: &Value) -> Value {
+fn summary(dir: &Path, name: &str, spec: &Value) -> Value {
+    let mut revision = std::collections::hash_map::DefaultHasher::new();
+    spec.to_string().hash(&mut revision);
+    for block in spec["blocks"].as_array().into_iter().flatten().filter(|block| block["type"] == "blueprint") {
+        blueprint::living(dir, name, block)["text"].as_str().unwrap_or_default().hash(&mut revision);
+    }
+    let revision = format!("{:016x}", revision.finish());
     let blocks = spec["blocks"].as_array().map_or(0, Vec::len);
     let asks =
         spec["blocks"].as_array().into_iter().flatten().filter(|b| matches!(b["type"].as_str(), Some("choice" | "confirm")) && b["answered"].is_null()).count();
-    json!({"name": name, "title": spec["title"], "at": spec["at"], "blocks": blocks, "asks": asks, "terminal": spec["terminal"]})
+    json!({"name": name, "title": spec["title"], "at": spec["at"], "revision":revision, "blocks": blocks, "asks": asks, "terminal": spec["terminal"]})
 }
 
 /// The caches a CI block is drawn from.
@@ -461,6 +471,24 @@ mod tests {
 
     fn no_caches() -> Caches {
         Caches { runs: Value::Null, inbox: Value::Null }
+    }
+
+    #[test]
+    fn a_documents_summary_tracks_blueprint_edits_without_changing_its_spec_timestamp() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path();
+        files::write(&dir.join("plan.json"), &json!({"title":"Plan","at":1,"terminal":"t7","blocks":[{"type":"blueprint","text":"flowchart TD\n A --> B"}]}))
+            .unwrap();
+        files::write(&dir.join("quota.json"), &json!({"title":"Quota","at":2,"terminal":"t7","blocks":[]})).unwrap();
+        let args = json!({"terminal":"t7","pick":"quota"});
+        let first = view_in(dir, &args, &no_caches());
+        std::fs::write(dir.join("plan.mmd"), "flowchart TD\n A --> C").unwrap();
+        let second = view_in(dir, &args, &no_caches());
+        let plan = |value: &Value| value["views"].as_array().unwrap().iter().find(|item| item["name"] == "plan").unwrap().clone();
+        assert_ne!(plan(&first)["revision"], plan(&second)["revision"]);
+        assert_eq!(plan(&first)["at"], plan(&second)["at"]);
+        assert_eq!(first["view"], second["view"]);
+        assert_eq!(view_in(dir, &args, &no_caches()), second);
     }
 
     #[test]

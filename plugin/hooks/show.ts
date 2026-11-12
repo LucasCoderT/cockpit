@@ -4,8 +4,8 @@ import type { ViewChip } from '../types'
 
 import { browse } from './browser'
 import { cacheDir, cockpitCommand, loadConfig } from './config'
-import { appDo, appCall, frontendOf, isRemoteWindow } from './herdr'
-import type { Here } from './herdr'
+import { appDo, appCall, frontendOf, isRemoteWindow, findTerminal } from './herdr'
+import type { Here, AppSpace } from './herdr'
 import { PAGE_BLOCKS, pageBlocks, pageHtml } from './page'
 import { fetchSource } from './sources'
 import { MCP } from './tools'
@@ -338,7 +338,15 @@ async function windowFailure($: $, name: string, answer: {error:string;kind:stri
 async function presentNative($: $,name:string,spec:Spec,here:Here|undefined,existed:boolean):Promise<{result:string;documents?:boolean}> {
   const app = (here?.frontend ?? await frontendOf($)) === 'app'
   const documents = app && (!spec.placement || spec.placement === 'right')
-  if (documents && existed) return {result:`Updated ${name} in Documents.`,documents:true}
+  if (documents && existed) {
+    const answer = await appCall($,['ls'])
+    if ('error' in answer) return {result:await windowFailure($,name,answer)}
+    const terminal = here?.terminal ?? await $.env.get('HC_TERMINAL_ID')
+    if (!terminal || !findTerminal((answer.value.spaces as AppSpace[] | undefined) ?? [],terminal)) {
+      return {result:`Wrote the view to ${await showDir($)}/${name}.json. The connected Herdr window could not find this session's terminal.`}
+    }
+    return {result:`Updated ${name} in Documents.`,documents:true}
+  }
   if (!here && app) {
     const answer = await appCall($,['ls'])
     return {result:'error' in answer ? await windowFailure($,name,answer) : `Wrote the view to ${await showDir($)}/${name}.json. The connected Herdr window could not find this session's terminal.`}
