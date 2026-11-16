@@ -60,7 +60,9 @@ subscriptions leave it out, so they cannot consume a pending remote-desk navigat
 
 The Herdr app can read a Linux or macOS runner's hub, including from Windows. Both ends need this version of the
 cockpit mod/hub. Connect the runner through Herdr's machine settings first, then put the cockpit layout and mod in
-the desktop's Herdr home. The desktop needs no cockpit binary.
+the desktop's Herdr home. The desktop needs no cockpit binary. The runner needs no window of its own: with neither the
+Herdr app nor the herdr TUI running there, its hub lists the agents from herdr-core, in the spaces and tabs the
+desktop placed them in.
 
 On the runner, start the hub with `COCKPIT_HUB_LISTEN` set to its Tailscale IP, for example
 `COCKPIT_HUB_LISTEN=100.64.0.10 cockpit hub start`. If a hub already runs, restart it deliberately with that variable;
@@ -87,7 +89,9 @@ reloaded copy of the mod leaves open in Herdr. Links and item
 navigation open on the desktop. Notifications appear as in-app toasts. Go, Peek and Open beside reach a runner agent
 through its machine-scoped address (`runner/t7`), the terminal Herdr shows for that machine; they write nothing to the
 runner's hub. The machine must connect to the hc session the runner's hub reads (its default session unless the hub
-runs with `HC_SESSION`), or these reach a different terminal with the same id. Runner agents are not joined to local
+runs with `HC_SESSION`), or these reach a different terminal with the same id. A runner's agent stays done and unread
+only while the desktop's Herdr still shows it done: the runner never learns which agents you opened on the desktop, and
+the desktop cannot tell it. Runner agents are not joined to local
 terminals or tabs with matching IDs.
 
 The review panel works on a runner agent: focus it (Go from the agents list) and the panel reads its folder, a runner
@@ -136,11 +140,12 @@ bar); floating on the root, the `queue` drawer (right edge, 44px peek, shown onl
 - **Home** (`home.js`, hub view `home` from `cli/src/home.rs`): a dashboard. A greeting with one line of counts, KPI
   tiles (agents needing you, reviews for you, your PRs, merged this week, agent spend), the NEXT MOVE callout (only an
   agent waiting on you: its question with its choices as buttons and a reply field), the agents by stage as wrapped
-  cards (empty stages on one line), then your PRs no agent works on (to fix, to land). On the right: Up next (meetings),
-  Apps (each pinned app in a few words, a click away) and Activity (the hub's events of the last days). "Needs you" means
-  agents only. With no card picked, the keys act on the NEXT MOVE agent.
+  cards (empty stages on one line; the agents pinned here or in the sidebar first, in a Pinned row, out of their stage's
+  row but still in its counts; pins live in the shared `cockpit.pins`), then your PRs no agent works on (to fix, to
+  land). On the right: Up next (meetings), Apps (each pinned app in a few words, a click away) and Activity (the hub's
+  events of the last days). "Needs you" means agents only. With no card picked, the keys act on the NEXT MOVE agent.
   Keys: `j k h l` move, `⏎` go, `1–9` answer, `t` reply, `f` the agent beside the board, `m` merge, `a` archive (tab
-  settled, Undo on the toast), `o` PR, `r` recap, `s` snooze, `q` queue, `n` new agent; right-click for the rest.
+  settled, Undo on the toast), `o` PR, `p` pin, `r` recap, `s` snooze, `q` queue, `n` new agent; right-click for the rest.
 - **Status bar** (`status.js`): Home's counts (`fleet.counts`, each a click) on the left; on the right the focused
   agent's branch, ↑↓ and files, its links (the agents view's `links`: PR, ticket, CI, deploy dashboard and run, then the
   pages its transcript cites, each named after its service, always in that order), queued prompts, agents to resume,
