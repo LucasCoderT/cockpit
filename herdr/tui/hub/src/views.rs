@@ -86,8 +86,24 @@ struct Sub {
     tx: Outbox,
     /// It shows the cockpit notifications (`subscribe {notify: true}`): one copy of the mod per window asks.
     notify: bool,
-    /// Each view it follows: (name, args, the value last sent).
-    views: Vec<(String, Value, Value)>,
+    /// Each view it follows.
+    views: Vec<Followed>,
+}
+
+/// A view a subscriber follows, with the top-level fields it asked for (all when `pick` is None) and what it was sent.
+struct Followed {
+    name: String,
+    args: Value,
+    pick: Option<Vec<String>>,
+    last: Value,
+}
+
+/// The fields of the view value that `pick` names, or all of it.
+fn picked(value: &Value, pick: &Option<Vec<String>>) -> Value {
+    match (value, pick) {
+        (Value::Object(map), Some(pick)) => Value::Object(map.iter().filter(|(k, _)| pick.contains(k)).map(|(k, v)| (k.clone(), v.clone())).collect()),
+        _ => value.clone(),
+    }
 }
 
 impl Drop for Sub {
@@ -142,17 +158,21 @@ pub fn has_subscribers() -> bool {
     !subs().is_empty()
 }
 
-/// The views asked for, as names or {name, args}; unknown ones are left out.
-fn wanted(request: &Value) -> Vec<(String, Value)> {
+/// The views asked for, as names or {name, args, pick}; unknown ones are left out. `pick` lists the top-level fields
+/// the subscriber reads, such as a sidebar's badge counts, so a version moving only the others is not sent.
+fn wanted(request: &Value) -> Vec<(String, Value, Option<Vec<String>>)> {
     request["views"]
         .as_array()
         .into_iter()
         .flatten()
         .filter_map(|v| match v {
-            Value::String(name) => Some((name.clone(), Value::Null)),
-            other => Some((other["name"].as_str()?.to_string(), other["args"].clone())),
+            Value::String(name) => Some((name.clone(), Value::Null, None)),
+            other => {
+                let pick = other["pick"].as_array().map(|p| p.iter().filter_map(Value::as_str).map(str::to_string).collect());
+                Some((other["name"].as_str()?.to_string(), other["args"].clone(), pick))
+            }
         })
-        .filter(|(name, _)| def(name).is_some())
+        .filter(|(name, _, _)| def(name).is_some())
         .collect()
 }
 
@@ -161,12 +181,12 @@ fn wanted(request: &Value) -> Vec<(String, Value)> {
 pub fn subscribe(request: &Value, tx: Outbox) -> u64 {
     static NEXT: AtomicU64 = AtomicU64::new(1);
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
-    let views: Vec<(String, Value, Value)> = wanted(request)
+    let views: Vec<Followed> = wanted(request)
         .into_iter()
-        .map(|(name, args)| {
-            let value = build(&name, &args);
+        .map(|(name, args, pick)| {
+            let value = picked(&build(&name, &args), &pick);
             let _ = tx.send(json!({"view": name, "args": args, "value": value}).to_string());
-            (name, args, value)
+            Followed { name, args, pick, last: value }
         })
         .collect();
     let notify = request["notify"] == true;
@@ -191,7 +211,7 @@ pub fn notify(notification: &Value) -> bool {
 pub fn focus(app: &str, target: &Value) {
     let app = if app == "to-do" { "todo" } else { app };
     let line = json!({"focus": app, "target": target}).to_string();
-    subs().retain(|s| !s.views.iter().any(|(n, _, _)| n == app) || s.tx.send(line.clone()).is_ok());
+    subs().retain(|s| !s.views.iter().any(|f| f.name == app) || s.tx.send(line.clone()).is_ok());
 }
 
 /// The folders every registered view reads.
@@ -267,7 +287,7 @@ fn keep(rx: Receiver<Dirty>) {
             continue;
         }
         let keys: Vec<(String, Value)> =
-            subs().iter().flat_map(|s| s.views.iter().filter(|(n, _, _)| names.contains(n.as_str())).map(|(n, a, _)| (n.clone(), a.clone()))).collect();
+            subs().iter().flat_map(|s| s.views.iter().filter(|f| names.contains(f.name.as_str())).map(|f| (f.name.clone(), f.args.clone()))).collect();
         let mut built: Vec<((String, Value), Value)> = Vec::new();
         for key in keys {
             if !built.iter().any(|(k, _)| *k == key) {
@@ -276,11 +296,12 @@ fn keep(rx: Receiver<Dirty>) {
             }
         }
         subs().retain_mut(|sub| {
-            for (name, args, last) in sub.views.iter_mut() {
-                let Some((_, value)) = built.iter().find(|((n, a), _)| n == name && a == args) else { continue };
-                if value != last {
-                    *last = value.clone();
-                    if sub.tx.send(json!({"view": name, "args": args, "value": value}).to_string()).is_err() {
+            for followed in sub.views.iter_mut() {
+                let Some((_, value)) = built.iter().find(|((n, a), _)| *n == followed.name && *a == followed.args) else { continue };
+                let value = picked(value, &followed.pick);
+                if value != followed.last {
+                    followed.last = value.clone();
+                    if sub.tx.send(json!({"view": followed.name, "args": followed.args, "value": value}).to_string()).is_err() {
                         return false;
                     }
                 }
@@ -296,10 +317,10 @@ pub fn shown(name: &str) -> Vec<Value> {
     subs.retain(|s| s.tx.send(String::new()).is_ok());
     subs.iter()
         .flat_map(|s| {
-            s.views.iter().filter(|(n, _, _)| n == name).map(|(_, args, value)| {
-                let mut shown = args.clone();
+            s.views.iter().filter(|f| f.name == name).map(|f| {
+                let mut shown = f.args.clone();
                 if name == "show"
-                    && let Some(document) = value["view"]["name"].as_str()
+                    && let Some(document) = f.last["view"]["name"].as_str()
                 {
                     if !shown.is_object() {
                         shown = json!({});
@@ -358,6 +379,30 @@ mod tests {
         assert!(notify(&json!({"title": "hi"})));
         let lines: Vec<String> = rx.try_iter().filter(|l| !l.is_empty()).collect();
         assert_eq!(serde_json::from_str::<Value>(&lines[0]).unwrap()["notify"]["title"], "hi");
+    }
+
+    static BUILDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+    /// A view whose `count` moves every second build and whose `noise` moves on each.
+    fn noisy(_: &Value, _: Doc) -> Value {
+        let n = BUILDS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        json!({"count": n / 2, "noise": n})
+    }
+
+    #[test]
+    fn a_picked_subscription_gets_its_fields_and_only_their_changes() {
+        register(Def { name: "noisy-view", docs: &[], dirs: Vec::new, build: noisy, act: no_act });
+        let (tx, rx) = channel();
+        subscribe(&json!({"views": [{"name": "noisy-view", "pick": ["count"]}]}), tx);
+        let next = || -> Option<Value> {
+            let line = std::iter::from_fn(|| rx.recv_timeout(Duration::from_secs(2)).ok()).find(|l| !l.is_empty())?;
+            Some(serde_json::from_str::<Value>(&line).unwrap()["value"].clone())
+        };
+        assert_eq!(next(), Some(json!({"count": 0})), "the picked fields alone");
+        touch("noisy-view");
+        std::thread::sleep(Duration::from_millis(500));
+        touch("noisy-view");
+        assert_eq!(next(), Some(json!({"count": 1})), "a build that moved only `noise` sends nothing");
     }
 
     #[test]
