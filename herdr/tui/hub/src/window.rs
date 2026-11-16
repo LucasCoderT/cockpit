@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn an_expired_window_command_cannot_be_answered() {
-        let (tx, rx) = channel();
+        let (tx, rx) = crate::outbox::channel();
         tx.send(String::new()).unwrap();
         let sub = crate::views::subscribe(&json!({"notify":true,"window":true}), tx);
         assert_eq!(call("ls", "", &Value::Null, Duration::from_millis(5)), Err(WindowError::MayHaveRun));

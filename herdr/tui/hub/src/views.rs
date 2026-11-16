@@ -13,6 +13,8 @@ use std::time::Duration;
 use notify::{RecursiveMode, Watcher};
 use serde_json::{Value, json};
 
+use crate::outbox::Outbox;
+
 /// Reads a store document by name (null before anyone wrote it).
 pub type Doc<'a> = &'a dyn Fn(&str) -> Value;
 /// A view's own actions: Some(Ok(note)) or Some(Err(error)) when it knows the action, None when it does not.
@@ -81,7 +83,7 @@ enum Dirty {
 struct Sub {
     id: u64,
     window: bool,
-    tx: Sender<String>,
+    tx: Outbox,
     /// It shows the cockpit notifications (`subscribe {notify: true}`): one copy of the mod per window asks.
     notify: bool,
     /// Each view it follows: (name, args, the value last sent).
@@ -96,7 +98,7 @@ impl Drop for Sub {
     }
 }
 
-pub fn window_sender() -> Option<(u64, Sender<String>)> {
+pub fn window_sender() -> Option<(u64, Outbox)> {
     subs().iter().rev().find(|s| s.window && s.notify).map(|s| (s.id, s.tx.clone()))
 }
 
@@ -156,7 +158,7 @@ fn wanted(request: &Value) -> Vec<(String, Value)> {
 
 /// Sends the views now, then each new value of them, as {view, args, value} lines; also {focus, target} lines when
 /// the palette or a notification asks the view's app to bring something into view.
-pub fn subscribe(request: &Value, tx: Sender<String>) -> u64 {
+pub fn subscribe(request: &Value, tx: Outbox) -> u64 {
     static NEXT: AtomicU64 = AtomicU64::new(1);
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     let views: Vec<(String, Value, Value)> = wanted(request)
@@ -318,6 +320,7 @@ pub fn prune() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::outbox::channel;
 
     #[test]
     fn documents_panel_visibility_includes_the_selected_document() {
