@@ -98,7 +98,8 @@ Every app action, including runbook steps, to-do changes and confirmations, trav
 `cockpit hub act <app> <action> <JSON args> [--armed <token>]` over Herdr's machine connection. That command
 hands it to the runner's hub on its unix socket and returns the full action response. Only address-bearing fields and the terminal positions of review/queue actions are translated; ordinary text and paths are preserved. Terminal handles retain
 `app:`: `app:runner/t7` reaches the hub as `app:t7`, while raw `runner/t7` reaches it as `t7`. Addresses of
-another machine are refused. Navigation and links open on the desktop.
+another machine are refused. Navigation and links open on the desktop. The runbook's Copy writes the desk's clipboard
+and never calls the hub.
 
 TCP has no TLS: use an encrypted private network such as Tailscale, and keep `hub.json` private. A hub listening
 off loopback answers reads only, whoever holds the token. Actions use the existing shell connection to the machine.

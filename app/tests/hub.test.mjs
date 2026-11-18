@@ -87,7 +87,7 @@ async function fixture(t, remote = true, globals = {}, host = "127.0.0.1") {
   }
   await module.link(load);
   await module.evaluate();
-  return { hub: module.namespace, calls, info, install, messages, clients, behavior, server, host };
+  return { hub: module.namespace, calls, info, install, messages, clients, behavior, server, host, context, imports };
 }
 
 test("a desktop reads the runner's discovery file and authenticates before requesting its inbox", async t => {
@@ -147,6 +147,35 @@ test("remote review actions run as a cockpit command on the runner, through its 
     [["/runner/cockpit", "hub", "act", "review", "send", JSON.stringify(["t7", review])], "runner"],
   ]);
   assert.equal(f.messages.length, 0, "no write travels over TCP");
+});
+
+test("Copy on a remote desk writes the clipboard and never calls the hub", async t => {
+  const f = await fixture(t);
+  const source = (await readFile(new URL("../mods/cockpit/runbook.js", import.meta.url), "utf8"));
+  const stubs = new Proxy({}, { get: () => () => new Proxy(function () {}, { get: () => () => ({}) }) });
+  const toasts = [];
+  const modules = {
+    "./hub.js": f.hub,
+    "./ui.js": { ...Object.fromEntries([...source.matchAll(/import \{([^}]*)\} from "\.\/ui\.js"/g)].flatMap(m => m[1].split(",")).map(n => n.trim()).filter(Boolean).map(n => [n, stubs[n]])), Toaster: class { push(_cx, text) { toasts.push(text); } } },
+    "gpui-kit": { div: stubs.div },
+    "gpui-base": { h_flex: stubs.h_flex, v_flex: stubs.v_flex, InputState: stubs.InputState },
+    herdr: { props: () => ({}), focused: () => null, panes: () => [], shared: () => ({}), settings: () => ({}), setShared: () => {}, layout: () => ({}) },
+    "./address.js": { toRunner: (address) => address },
+    "./updates.js": { UpdateBadge: stubs.UpdateBadge, panelVisible: () => true },
+  };
+  const module = new SourceTextModule(source, { context: f.context });
+  await module.link(name => new SyntheticModule(Object.keys(modules[name]), function () {
+    for (const [key, value] of Object.entries(modules[name])) this.setExport(key, value);
+  }, { context: f.context }));
+  await module.evaluate();
+  const runbook = Object.create(module.namespace.default.prototype);
+  runbook.toasts = new modules["./ui.js"].Toaster();
+  const written = [];
+  runbook.copy({ write_to_clipboard: text => written.push(text) }, ["make deploy", "", "make smoke"]);
+  assert.deepEqual(written, ["make deploy\nmake smoke"]);
+  assert.deepEqual(toasts, ["Copied 2 commands"]);
+  assert.equal(f.messages.length, 0);
+  assert.equal(f.calls.filter(call => call[0] === "exec").length, 0);
 });
 
 test("a remote review refuses another machine's terminal", async t => {

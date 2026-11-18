@@ -254,6 +254,32 @@ fn hub_act_refuses_malformed_arguments() {
 }
 
 #[test]
+fn hub_act_hands_a_runbook_action_to_the_hub_with_its_armed_key() {
+    let sandbox = Sandbox::new();
+    let seen = fake_hub(&sandbox, Some(json!({"note": "ok", "pending": {}, "refreshing": {}, "error": null})));
+    let step = json!({"n": "2", "step": "Deploy", "where": "prod", "status": "open", "command": "make deploy"});
+    let cases = [
+        ("done", json!([[["eng-412", "2"]]]), None),
+        ("set", json!(["eng-412", "2", "command", "make ship"]), None),
+        ("add", json!(["eng-412", null, "Smoke", "prod", "make smoke"]), None),
+        ("undo", json!([]), None),
+        ("run_step", json!([{"$book": "eng-412"}, step]), Some("run-eng-412-2")),
+    ];
+    for (action, args, armed) in &cases {
+        let list = args.to_string();
+        let mut command = vec!["hub", "act", "runbook", action, list.as_str()];
+        command.extend(armed.iter().flat_map(|a| ["--armed", a]));
+        let out = sandbox.cockpit(&command, &[]);
+        assert_eq!(out.status.code(), Some(0), "{action}: {}", stderr(&out));
+    }
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.len(), cases.len());
+    for ((action, args, armed), request) in cases.iter().zip(seen.iter()) {
+        assert_eq!((&request["app"], &request["action"], &request["args"], &request["armed"]), (&json!("runbook"), &json!(action), args, &json!(armed)));
+    }
+}
+
+#[test]
 fn hub_ping_answers_by_its_exit_code() {
     let sandbox = Sandbox::new();
     assert_eq!(sandbox.cockpit(&["hub", "ping"], &[]).status.code(), Some(1));
