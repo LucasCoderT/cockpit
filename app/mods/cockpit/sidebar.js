@@ -7,6 +7,7 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { run, shared, setShared, focused, spaces, machines, hc, panes, terminals, setAgentOrder, notify, openOverlay, window as win, readTextFile, exec } from "herdr";
 import * as hub from "./hub.js";
+import { openPanel } from "./status.js";
 import { togglePalette } from "./palette.js";
 import { openCode } from "./code.js";
 import { deliver, follow } from "./notify.js";
@@ -112,7 +113,7 @@ export default class Sidebar {
       }
     });
     const views = Object.entries(BADGE_FIELDS).map(([name, pick]) => ({ name, pick }));
-    this.sub = hub.subscribe(cx, { views, notify: true }, (m, cx) => {
+    this.sub = hub.subscribe(cx, { views, notify: true, window: true }, (m, cx) => {
       if (m.view) this.counts[m.view] = appBadge(m.view, m.value);
       // aq has no place in the config's spaces: its icon shows wherever the hub finds aq on its machine.
       if (m.view === "aq") this.aq = m.value?.state && m.value.state !== "absent";
@@ -137,7 +138,12 @@ export default class Sidebar {
   }
 
   command(c, cx) {
-    if (c.startsWith("go:")) show(c.slice(3));
+    if (c.startsWith("panel-open:")) {
+      const [name, ...key] = c.slice(11).split(":");
+      openPanel(name);
+      if (name === "show" && key.length) hub.focusHere({app:"show",key:key.join(":")});
+    }
+    else if (c.startsWith("go:")) show(c.slice(3));
     else if (c === "palette") openPalette(cx);
     else if (c === "recap" || c.startsWith("recap:")) this.openRecap(c.split(":")[1]);
     else if (this.agents.command(c, cx)) return;

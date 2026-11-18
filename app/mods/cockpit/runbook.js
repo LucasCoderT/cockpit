@@ -5,12 +5,38 @@
 
 import { div } from "gpui-kit";
 import { h_flex, v_flex, InputState } from "gpui-base";
-import { props, focused, panes, shared, settings } from "herdr";
+import { props, focused, panes, shared, settings, setShared, layout } from "herdr";
 import * as hub from "./hub.js";
+import { toRunner } from "./address.js";
+import { UpdateBadge, panelVisible } from "./updates.js";
 import {
   tokens, TEXT, RADIUS, Icon, Badge, Button, Kbd, ListRow, PageHeader, SearchField, TextField, KeyHints, Empty, ErrorState,
   Skeleton, Command, Toaster, Flashes, Scroller, Hover, Progress, Ring, Section, SidePanel, AlertDialog, Spinner, openMenu, alpha,
 } from "./ui.js";
+
+/** The runbook most recently written by the focused agent, then its ticket or checkout match. */
+export function slugFor(books, agents, focusedTerminal, machine, pane) {
+  if (!focusedTerminal || (machine && !focusedTerminal.replace(/^app:/, "").startsWith(`${machine}/`))) return null;
+  const handle = (value, origin = "runner") => {
+    if (typeof value !== "string") return null;
+    try { const local = toRunner(value,machine,origin); return local.startsWith("app:") ? local : `app:${local}`; }
+    catch { return null; }
+  };
+  const terminal = handle(focusedTerminal,"desktop");
+  const row = agents.find(a => handle(a.terminal ?? a.address) === terminal);
+  const newest = found => found.slice().sort((a,b)=>(Number(b.owner?.at ?? 0)-Number(a.owner?.at ?? 0)) || String(b.updated ?? "").localeCompare(String(a.updated ?? "")))[0]?.slug ?? null;
+  const owned = newest(books.filter(b=>b.owner?.terminal && handle(b.owner.terminal)===terminal));
+  if (owned) return owned;
+  const session = row?.session?.id ?? row?.session;
+  if (session) {
+    const own = newest(books.filter(b=>b.owner?.session===session));
+    if (own) return own;
+  }
+  const ticket = typeof row?.ticket === "string" ? row.ticket : row?.ticket?.id ?? row?.ticket?.key;
+  if (ticket && books.some(b=>b.slug===ticket.toLowerCase())) return ticket.toLowerCase();
+  const where = `${pane?.branch ?? row?.branch ?? ""} ${pane?.cwd ?? row?.cwd ?? ""}`.toLowerCase();
+  return books.filter(b=>where.includes(b.slug)).sort((a,b)=>b.slug.length-a.slug.length)[0]?.slug ?? null;
+}
 
 const mono = () => settings().font ?? "JetBrains Mono";
 const ADDER = "\u0000adder";
@@ -95,7 +121,10 @@ export default class Runbook {
       { views: this.panel ? ["runbook", "agents"] : ["runbook"], focus: this.panel ? null : "runbook" },
       (m, cx) => {
         if (m.view === "runbook") this.take(m.value, cx);
-        if (m.view === "agents") this.agents = m.value?.agents ?? m.value?.rows ?? (Array.isArray(m.value) ? m.value : []);
+        if (m.view === "agents") {
+          this.machine = m.value?.remote ?? null;
+          this.agents = m.value?.agents ?? m.value?.rows ?? (Array.isArray(m.value) ? m.value : []);
+        }
         if (m.focus === "runbook" && !this.panel) this.goTo(m.target, cx);
         cx.notify();
       },
@@ -181,9 +210,22 @@ export default class Runbook {
     return (steps.find((s) => s.open) ?? steps[0])?.key ?? null;
   }
 
+  updateBadge(modelChanged = false) {
+    if (!this.panel) return;
+    const visible = panelVisible(layout(),"runbook");
+    if (!modelChanged && this.badgeVisible === visible) return;
+    this.badgeVisible = visible;
+    this.updates ??= new UpdateBadge();
+    if (modelChanged) this.badgeEntries = (this.model?.books ?? []).map(b=>[b.slug,JSON.stringify(b)]);
+    const count = this.updates.take(this.badgeEntries ?? [],visible);
+    const badge = count ? {count,tone:"info"} : null;
+    if (JSON.stringify(shared("badge.runbook") ?? null)!==JSON.stringify(badge)) setShared("badge.runbook",badge);
+  }
+
   take(model, cx) {
     const before = this.model;
     this.model = model;
+    this.updateBadge(true);
     if (!before) {
       const first = this.books().find((b) => b.todo > 0) ?? this.books()[0];
       this.slug = first?.slug ?? null;
@@ -296,13 +338,7 @@ export default class Runbook {
     if (f?.terminal) this.lastTerminal = f.terminal;
     const terminal = this.lastTerminal;
     if (!terminal) return null;
-    const row = this.agents.find((a) => a.terminal === terminal || a.address === terminal || String(a.address ?? "").endsWith(`:${terminal}`));
-    const ticket = typeof row?.ticket === "string" ? row.ticket : row?.ticket?.id ?? row?.ticket?.key;
-    if (ticket && this.bookOf(ticket.toLowerCase())) return ticket.toLowerCase();
-    const pane = panes().find((p) => p.terminal === terminal);
-    const where = `${pane?.branch ?? row?.branch ?? ""} ${pane?.cwd ?? ""}`.toLowerCase();
-    const found = this.books().filter((b) => where.includes(b.slug)).sort((a, b) => b.slug.length - a.slug.length)[0];
-    return found?.slug ?? null;
+    return slugFor(this.books(),this.agents,terminal,this.machine,panes().find(p=>p.terminal===terminal));
   }
 
   // -------------------------------------------------------------------------------------------------------------------
@@ -1314,6 +1350,7 @@ export default class Runbook {
   }
 
   render(cx) {
+    this.updateBadge();
     const k = tokens();
     if (this.panel) return this.renderPanel(k, cx);
     const m = this.model;

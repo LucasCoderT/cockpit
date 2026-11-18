@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { answerText, blueprintName, collectAnswers, isBlueprintFile, viewError } from '../hooks/show'
+import { answerText, blueprintName, collectAnswers, isBlueprintFile, viewError, present, isViewOpen, refreshSources, toggleView } from '../hooks/show'
 import { SHOW_CASES } from './fixtures/show-cases'
 
 const HOME = '/home/me'
@@ -81,3 +81,109 @@ test('a click on a blueprint box reads as a change request about it', async () =
   const ask = { block: 0, type: 'blueprint', value: { node: 'B', label: 'Count calls', text: 'count per org, not per user' }, label: 'Count calls' }
   expect(answerText('blueprint-3f2a1c9d', ask, { type: 'blueprint' })).toBe('In the blueprint, about «Count calls» (box B): count per org, not per user')
 })
+
+
+function presentation(windowCode = 0) {
+  const files = new Map<string,string>([[`${HOME}/.config/cockpit/herdr/cockpit.sh`, ''],[`${HOME}/.config/cockpit/herdr/app.sh`,''],[`${HOME}/.config/cockpit/config.json`,JSON.stringify({herdrPluginRoot:`${HOME}/.config/cockpit/herdr`})]]);
+  const calls:string[][]=[];
+  const $={
+    env:{get:async (key:string)=>({HOME,HC_TERMINAL_ID:'t14'} as Record<string,string>)[key]},
+    session:{id:async()=> 'acme-session',cwd:async()=>'/src/acme/api'},
+    fs:{read:async(path:string)=>{if(!files.has(path)) throw Error('ENOENT'); return files.get(path)!},
+      write:async(path:string,text:string)=>void files.set(path,text),
+      stat:async(path:string)=>{if(!files.has(path)) throw Error('ENOENT');return {mtimeMs:1,size:1}},
+      list:async()=>[]},
+    process:{run:async(argv:string[])=>{
+      calls.push(argv);
+      if(argv.join(' ').includes('command -v')) return ran(1);
+      if(argv.includes('browse') || argv.some(a=>a.endsWith('/browse.sh'))) return ran(3);
+      if(argv[0]==='herdr'&&argv[2]==='split') return ran(0,'{"result":{"pane":{"pane_id":"w1:p2"}}}');
+      if(argv.includes('window')) return {...ran(windowCode,argv.includes('pane.split')?'{"pane":"p9"}':argv.at(-1)==='ls'?JSON.stringify({spaces:[{id:'s1',tabs:[{id:'tab1',terminals:[{terminal:'t14',pane:'p14'}]}]}]}):'{}'),stderr:windowCode?'no Herdr window is connected to this machine':''};
+      return ran(0,'{}');
+    }},
+  } as unknown as Parameters<typeof present>[0];
+  return {$,files,calls};
+}
+
+test('a page that did not open says so',async()=>{
+  const f=presentation();
+  const answer=await present(f.$,'quota',{title:'Quota',blocks:[{type:'text',text:'ENG-412'}],at:1,session:'acme-session',placement:'browser'},undefined);
+  expect('result' in answer && answer.result).toContain('no browser opened');
+});
+
+test('show without a window says it wrote the view',async()=>{
+  const f=presentation(3);
+  const answer=await present(f.$,'quota',{title:'Quota',blocks:[{type:'text',text:'ENG-412'}],at:1,session:'acme-session'},undefined);
+  expect('result' in answer && answer.result).toContain('No Herdr window is connected');
+  expect(f.files.has(`${DIR}/quota.json`)).toBe(true);
+});
+
+const appHere = {pane:'app:t14',tab:'tab1',space:'s1',frontend:'app' as const,terminal:'t14',paneId:'p14'}
+const quotaSpec = {title:'Quota',blocks:[{type:'markdown',text:'ENG-412'}],at:1,session:'acme-session'}
+test('a new view opens Documents beside the session in the app',async()=>{
+ const f=presentation();const answer=await present(f.$,'new-quota',quotaSpec,appHere)
+ expect('result' in answer && answer.result).toBe('Opened new-quota in Documents beside this session.')
+ expect(f.calls.filter(a=>a.includes('do')).map(a=>a[a.indexOf('do')+1])).toEqual(['pane.focus','cockpit.panel-open:show:new-quota'])
+})
+test('an update only rewrites the view',async()=>{
+ const f=presentation();await present(f.$,'existing-quota',quotaSpec,appHere);const count=f.calls.filter(a=>a.includes('do')).length
+ const answer=await present(f.$,'existing-quota',quotaSpec,appHere)
+ expect('result' in answer && answer.result).toBe('Updated existing-quota in Documents.');expect(f.calls.filter(a=>a.includes('do')).length).toBe(count)
+})
+test('down still splits a pane',async()=>{
+ const f=presentation();await present(f.$,'down-quota',{...quotaSpec,placement:'down'},appHere)
+ expect(f.calls.some(a=>a.includes('pane.split'))).toBe(true)
+})
+test('a browser view with no browser lands in Documents',async()=>{
+ const f=presentation();const answer=await present(f.$,'browser-quota',{...quotaSpec,placement:'browser'},appHere)
+ expect('result' in answer && answer.result).toBe('No browser beside this session: browser-quota is in Documents instead.')
+ expect(JSON.parse(f.files.get(`${DIR}/browser-quota.json`)!).placement).toBe(undefined)
+ expect(f.calls.some(a=>a.includes('cockpit.panel-open:show:browser-quota'))).toBe(true)
+})
+test('a blueprint opens Documents too',async()=>{
+ const f=presentation();await present(f.$,'blueprint-acme',{...quotaSpec,blocks:[{type:'blueprint',text:'flowchart TD\n a --> b'}]},appHere)
+ expect(f.calls.some(a=>a.includes('cockpit.panel-open:show:blueprint-acme'))).toBe(true)
+})
+test('the herdr TUI still splits a pane',async()=>{
+ const f=presentation();await present(f.$,'tui-quota',quotaSpec,{pane:'w1:p1',tab:'t1',space:'w1',frontend:'tui'})
+ expect(f.calls.some(a=>a[0]==='herdr'&&a[2]==='split')).toBe(true)
+})
+
+test('Documents are live to source refresh and footer navigation without split markers',async()=>{
+ const f=presentation(),name='live-quota',at=Date.now();
+ f.$.session.id=async()=> 'acme-live';
+ f.files.set(`${DIR}/${name}.json`,JSON.stringify({...quotaSpec,at,session:'acme-live',terminal:'t14',blocks:[{type:'table',source:{metabase:{question:412}},columns:['old'],rows:[],refreshed_at:0}]}));
+ f.$.fs.list=async()=>[{name:`${name}.json`,kind:'file',size:1,mtimeMs:at,isLink:false}];
+ const original=f.$.process.run;
+ f.$.process.run=async (argv,options)=>argv.includes('shown') ? ran(0,JSON.stringify([{terminal:'t14',name}])) : original(argv,options);
+ f.$.mcp={call:async()=>({isError:false,content:[{type:'text',text:JSON.stringify({cols:[{name:'count'}],rows:[[42]]})}]})} as typeof f.$.mcp;
+ expect(await isViewOpen(f.$,name)).toBe(true);
+ await refreshSources(f.$,'acme-live');
+ expect(JSON.parse(f.files.get(`${DIR}/${name}.json`)!).blocks[0].rows).toEqual([[42]]);
+ await toggleView(f.$,name,appHere);
+ expect(f.calls.some(a=>a.includes(`cockpit.panel-open:show:${name}`))).toBe(true);
+ expect(f.calls.some(a=>a.includes('pane.split'))).toBe(false);
+});
+
+test('repeated show with no window reports storage without claiming Documents presentation',async()=>{
+ for(const placement of [undefined,'browser'] as const) {
+  const f=presentation(3),name=placement?'offline-browser':'offline-quota',spec={...quotaSpec,placement};
+  for(let n=0;n<2;n++) {
+   const answer=await present(f.$,name,spec,undefined);
+   expect('result' in answer && answer.result).toContain('No Herdr window is connected');
+   expect('result' in answer && answer.result.includes('is in Documents instead')).toBe(false);
+   expect('result' in answer && answer.result.includes('Updated ')).toBe(false);
+  }
+  expect(f.files.has(`${DIR}/${name}.json`)).toBe(true);
+  expect(f.calls.some(a=>a.includes('do'))).toBe(false);
+ }
+});
+
+test('an existing document checks its terminal without switching the window',async()=>{
+ const f=presentation();
+ const run=f.$.process.run;f.$.process.run=async(argv,opts)=>argv.at(-1)==='ls'?ran(0,'{"spaces":[]}'):run(argv,opts);
+ f.files.set(`${DIR}/missing-terminal.json`,JSON.stringify(quotaSpec));
+ const answer=await present(f.$,'missing-terminal',quotaSpec,appHere);
+ expect('result' in answer && answer.result).toContain("could not find this session's terminal");
+ expect(f.calls.some(a=>a.includes('do'))).toBe(false);
+});

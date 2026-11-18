@@ -15,7 +15,7 @@ use cockpit_core::files;
 use cockpit_core::frontend::{self, Frontend};
 use serde_json::{Value, json};
 
-use crate::{act, feed, fetch, fetcher, go, history, names, outbox, search, store, views};
+use crate::{act, feed, fetch, fetcher, go, history, names, outbox, search, store, views, window};
 
 /// A connection the hub answers on: its unix socket, or TCP on 127.0.0.1 for the Herdr app's mod.
 pub trait Conn: Read + Write + Send + Sized + 'static {
@@ -92,7 +92,7 @@ pub struct Gate {
 
 /// Whether this gate turns the op away: off loopback, everything that is not a read.
 fn refused(gate: &Gate, op: &str) -> bool {
-    gate.read_only && !READS.contains(&op)
+    gate.read_only && !READS.contains(&op) && op != "window_reply"
 }
 
 /// How long a subscriber's connection may refuse a line before the hub lets it go; COCKPIT_HUB_WRITE_SECS shortens it
@@ -129,6 +129,13 @@ pub fn serve<C: Conn>(stream: C, last: Arc<AtomicU64>, gate: Gate) {
                 let _ = writeln!(writer, "{}", json!({"error": "a request on TCP needs hub.json's token"}));
                 return;
             }
+            Ok(request) if gate.token.is_some() && ["window_token", "window"].contains(&request["op"].as_str().unwrap_or_default()) => {
+                json!({"error": format!("{} needs the unix socket", request["op"].as_str().unwrap_or_default())})
+            }
+            Ok(request) if request["op"] == "subscribe" && request["window"] == true && request["window_secret"].as_str() != Some(window::secret()) => {
+                let _ = writeln!(writer, "{}", json!({"error":"this window secret is not the hub's: ask `cockpit hub window-token` again"}));
+                return;
+            }
             Ok(request) if refused(&gate, request["op"].as_str().unwrap_or_default()) => {
                 json!({"error": "this cockpit hub serves reads only off loopback: start it without COCKPIT_HUB_LISTEN to write from this machine"})
             }
@@ -162,7 +169,7 @@ fn subscribe<C: Conn>(mut writer: C, mut reader: BufReader<C>, request: &Value) 
     if !names.is_empty() {
         store::global().subscribe(names, tx.clone());
     }
-    views::subscribe(request, tx.clone());
+    let id = views::subscribe(request, tx.clone());
     // What the other end sends is only a sign of life; the read ends when it closes, falls quiet or the writer is done.
     let gone = Arc::new(AtomicBool::new(false));
     std::thread::spawn({
@@ -176,6 +183,7 @@ fn subscribe<C: Conn>(mut writer: C, mut reader: BufReader<C>, request: &Value) 
                     _ => {}
                 }
             }
+            views::window_gone(id);
             gone.store(true, Ordering::Release);
             reader.get_ref().abort();
             let _ = tx.send(String::new());
@@ -191,6 +199,7 @@ fn subscribe<C: Conn>(mut writer: C, mut reader: BufReader<C>, request: &Value) 
             break;
         }
     }
+    views::window_gone(id);
     writer.abort();
     views::prune();
 }
@@ -205,6 +214,22 @@ pub fn handle(request: &Value) -> Value {
     let field = |name: &str| request[name].as_str().unwrap_or_default();
     match field("op") {
         "ping" => json!({"ok": true}),
+        "window_token" => json!({"secret":window::secret()}),
+        "window" => match window::call(field("cmd"), field("command"), &request["args"], Duration::from_secs(10)) {
+            Ok(value) => json!({"value":value}),
+            Err(error) => json!({"error":error.to_string(),"kind":error.kind()}),
+        },
+        "window_reply" => {
+            let outcome = match request["error"].as_str() {
+                Some(error) => Err(error.to_string()),
+                None => Ok(request["value"].clone()),
+            };
+            if window::reply(request["id"].as_u64().unwrap_or(0), field("secret"), field("capability"), outcome) {
+                json!({"ok":true})
+            } else {
+                json!({"error":"unknown, expired or unauthorized window reply"})
+            }
+        }
         "act" => {
             let args = request["args"].as_array().cloned().unwrap_or_default();
             let armed = request["armed"].as_str().map(str::to_string);
@@ -296,7 +321,7 @@ mod tests {
 
     #[test]
     fn a_read_only_gate_turns_away_everything_that_writes() {
-        for op in ["ping", "view", "search", "fetch", "events", "history", "shown", "subscribe"] {
+        for op in ["ping", "view", "search", "fetch", "events", "history", "shown", "subscribe", "window_reply"] {
             assert!(!refused(&gate(true), op), "{op} only reads");
         }
         for op in ["act", "go", "notify", "store.put", "store.patch", "store.lease", "store.release", "dance", ""] {

@@ -55,7 +55,7 @@ mod tests {
     fn descriptions_are_the_plugins() {
         let tools = list();
         let said = |n: usize| tools[n]["description"].as_str().unwrap().to_string();
-        assert!(said(0).starts_with("Draws charts, figures, tables") && said(0).ends_with("with rows given in the call."), "{}", said(0));
+        assert!(said(0).starts_with("Draws charts, figures, tables") && said(0).ends_with("the app shows the blocks in Documents instead."), "{}", said(0));
         // An escaped quote and a backslash read as themselves.
         assert!(said(0).contains("the person's next message") && said(0).contains(r"`---\ntitle:"));
         assert!(said(1).starts_with("Searches everything cockpit knows") && said(1).ends_with("a ticket's its id."));

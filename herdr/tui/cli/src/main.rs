@@ -24,6 +24,7 @@ mod shots;
 mod space;
 mod store;
 mod update;
+mod window;
 
 /// mimalloc hands freed pages back to the system soon after: the system allocator kept the tens of megabytes a show
 /// picture's draw frees, so an idle pane held them.
@@ -95,6 +96,7 @@ fn main() {
         return;
     }
     match command.as_str() {
+        "window" => window::main(rest),
         "inbox" => app(cockpit_inbox::run()),
         "runbook" => app(cockpit_runbook::run()),
         "todo" => app(cockpit_todo::run()),
@@ -120,6 +122,7 @@ fn main() {
         }
         "hub" if rest == ["start"] => gui::hub_start(),
         "hub" if rest == ["stop"] => gui::hub_stop(),
+        "hub" if rest == ["window-token"] => window::token(),
         "hub" if rest.len() == 2 && rest[0] == "shown" => gui::hub_shown(&rest[1]),
         "hub" if rest.first().is_some_and(|a| a == "act") => act::hub_act(&rest[1..]),
         "app" => gui::main(rest),

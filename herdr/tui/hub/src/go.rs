@@ -31,10 +31,19 @@ pub fn go(target: &Value) -> Value {
     if app == "session" {
         return session(target);
     }
+    if frontend::current() == frontend::Frontend::App && !frontend::local_app() {
+        return match crate::window::call("do", "cockpit.focus", &json!({"target":target}), std::time::Duration::from_secs(10)) {
+            Ok(_) => json!({"ok":true}),
+            Err(error) => json!({"error":error.to_string(),"kind":error.kind()}),
+        };
+    }
     focus::request(app, target);
     crate::views::focus(app, target);
     if let Some(space) = space_of(app) {
-        frontend::show_app(if app == "to-do" { "todo" } else { app }, space);
+        let shown = frontend::show_app(if app == "to-do" { "todo" } else { app }, space);
+        if !shown && frontend::current() == frontend::Frontend::App {
+            return json!({"error":"the local Herdr window did not answer","kind":"failed"});
+        }
     }
     json!({"ok": true})
 }

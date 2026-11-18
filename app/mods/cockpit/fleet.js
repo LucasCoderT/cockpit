@@ -1,7 +1,7 @@
 // The agents as the shell's views see them: Herdr's live agents (status, place, times) joined with the hub's `agents`
 // view (question, recap, branch, PR, CI, changes, cost), each placed in a stage: whose move it is.
 
-import { agents, spaces, panes, run, setShared, notify } from "herdr";
+import { agents, spaces, run, setShared, notify, panes } from "herdr";
 import * as hub from "./hub.js";
 
 /** The stages, in the order the Home board shows them. */
@@ -147,10 +147,19 @@ export function goToAgent(agent) {
   setShared("cockpit.app", "work");
 }
 
-/** Explains why a remote row cannot run tab commands: its tab ids belong to the runner, not this desktop. */
+/** The tab in this desktop that holds an agent, scoped to the runner's spaces for remote agents. */
+export function desktopTab(agent) {
+  if (!agent?.remote) return agent?.tab ?? null;
+  const address = String(agent.address ?? agent.handle ?? agent.terminal ?? "").replace(/^app:/, "");
+  if (!address.startsWith(`${agent.remote}/`)) return null;
+  const owned = new Set(spaces().filter(s=>s.machine===agent.remote).flatMap(s=>(s.tabs ?? []).map(t=>t.id)));
+  return panes().find(p=>p.terminal===address && owned.has(p.tab))?.tab ?? null;
+}
+
+/** Explains why a runner's agent cannot be archived when its terminal is absent from this desktop. */
 export function refuseRemoteAgent(agent) {
-  if (!agent?.remote) return false;
-  notify({ title: "Read-only remote desk", body: "Archiving a runner's agent needs a local cockpit installation.", level: "info" });
+  if (!agent?.remote || desktopTab(agent)) return false;
+  notify({title:"This agent has no tab in this window",body:"Open the runner's terminal here before archiving it.",level:"info"});
   return true;
 }
 

@@ -18,7 +18,7 @@ use crate::table::{self, Column};
 
 /// The folders the view reads: the runbooks and the sessions' handoffs.
 pub fn dirs() -> Vec<PathBuf> {
-    vec![book::dir(), handoff::dir()]
+    vec![book::dir(), handoff::dir(), files::cache().join("runbook-owners")]
 }
 
 pub fn view(_args: &Value, doc: &dyn Fn(&str) -> Value) -> Value {
@@ -66,10 +66,21 @@ fn book_json(book: &Book, sessions: &HashMap<String, Value>, cache: &Path, inbox
         "total": total,
         "done": total - todo,
         "refresh": refresh(&book.slug, cache),
+        "owner": owner(&book.slug, cache),
         "notes": book.notes.iter().map(|n| note_parts(n)).collect::<Vec<_>>(),
         "acts": book_acts(book).iter().map(act_json).collect::<Vec<_>>(),
         "steps": book.steps.iter().map(|s| step_json(book, s, sessions, inbox)).collect::<Vec<_>>(),
     })
+}
+
+fn owner(slug: &str, cache: &Path) -> Value {
+    let per_book = files::load(&cache.join("runbook-owners").join(format!("{slug}.json")));
+    let owners = files::load(&cache.join("runbook-owners.json")).unwrap_or(Value::Null);
+    let found = per_book.as_ref().unwrap_or(&owners[slug]);
+    if !found.is_object() {
+        return Value::Null;
+    }
+    json!({"terminal":found.get("terminal").unwrap_or(&found["pane"]),"session":found["session"],"at":found["at"]})
 }
 
 /// A background refresh of the runbook: running from its log's start until its exit status lands beside it.
@@ -299,6 +310,20 @@ mod tests {
 
     const BOOK: &str = "# ENG-1 · Quotas\nupdated: today\n\n| # | Step | Where | Status | Command |\n|---|---|---|---|---|\n\
                         | 1 | Merge | api#12 | ✅ merged | |\n| 2 | Backfill | prod | ⬜ to do | `bin/backfill` |\n\n## Notes\n- run `x` first\n";
+
+    #[test]
+    fn a_book_carries_the_owner_recorded_for_its_slug() {
+        let root = tempfile::tempdir().unwrap();
+        let (books, cache) = (root.path().join("runbooks"), root.path().join("cache"));
+        std::fs::create_dir_all(&books).unwrap();
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(books.join("eng-412.md"), BOOK).unwrap();
+        let view = model(&books, &root.path().join("handoffs"), &cache, &Value::Null);
+        assert_eq!(view["books"][0]["owner"], Value::Null);
+        files::write(&cache.join("runbook-owners.json"), &json!({"eng-412":{"terminal":"app:t7","session":"acme-session","at":1}})).unwrap();
+        let view = model(&books, &root.path().join("handoffs"), &cache, &Value::Null);
+        assert_eq!(view["books"][0]["owner"], json!({"terminal":"app:t7","session":"acme-session","at":1}));
+    }
 
     #[test]
     fn the_view_and_its_edits() {

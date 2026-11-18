@@ -5,7 +5,7 @@ export const MCP = {
     "show": {
       "name": "show",
       "description": [
-        "Draws charts, figures, tables, diagrams, pictures, diffs, logs or a question in a pane beside this session, natively ",
+        "Draws charts, figures, tables, diagrams, pictures, diffs, logs or a question beside this session, natively ",
         "(in the Herdr app or herdr). Reach for it on your own, unasked, whenever an answer holds a trend, a breakdown, a ",
         "distribution, a comparison, a share, a ranking, a funnel, a process, an architecture or an exchange: draw it here ",
         "instead of a markdown table or ASCII art, and keep the text answer to what it means. It replaces hand-written HTML ",
@@ -34,10 +34,10 @@ export const MCP = {
         "comment on, each comment reaching you as their next message; {type:\"log\", command, every?, lines?} tailing a command; ",
         "{type:\"ci\", repo, branch} for the CI run of a branch; {type:\"choice\", prompt?, options:[{label, value?, preview?}]} or ",
         "{type:\"confirm\", summary, consequence?, confirm_label?}, whose answer reaches you as the person's next message; ",
-        "{type:\"markdown\", text}. Any block takes a title. The same pane name updates the same pane. placement:\"browser\" ",
+        "{type:\"markdown\", text}. Any block takes a title. In the Herdr app, new views and blueprints open in Documents beside this session; updates keep the current tab. Without placement or with right, use Documents; down and zoomed keep a separate pane. The herdr TUI keeps separate panes. The same pane name updates the same view. placement:\"browser\" ",
         "draws the view as a web page in the browser beside the session instead, at full resolution: use it for tables too ",
         "wide for a pane, big diagrams, pictures and side-by-side diffs; it takes markdown, stats, table, chart, flow, ",
-        "sequence, mermaid, image, compare and diff blocks, with rows given in the call."
+        "sequence, mermaid, image, compare and diff blocks, with rows given in the call. Without a browser beside the session, the app shows the blocks in Documents instead."
       ],
       "inputSchema": {
         "type": "object",
