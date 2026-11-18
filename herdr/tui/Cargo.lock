@@ -453,7 +453,7 @@ dependencies = [
 
 [[package]]
 name = "cockpit-aq"
-version = "0.40.3"
+version = "0.40.4"
 dependencies = [
  "chrono",
  "cockpit-core",
