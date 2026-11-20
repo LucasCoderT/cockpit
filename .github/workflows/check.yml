@@ -42,19 +42,6 @@ jobs:
       - run: node --test browser/tests/*.test.mjs
 
   # The shell end to end in the Electron it pins, on the one system it runs on.
-  browser:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/cockpit-ci/electron
-          key: electron-${{ runner.arch }}-${{ hashFiles('browser/pins.json') }}
-      - run: sh scripts/browser-smoke.sh
-
   plugin:
     runs-on: ubuntu-latest
     steps:
@@ -93,20 +80,6 @@ jobs:
         with:
           workspaces: herdr/tui
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - run: cargo test --workspace --locked --no-fail-fast
-
-  rust-macos:
-    runs-on: macos-latest
-    defaults:
-      run:
-        working-directory: herdr/tui
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: herdr/tui
-      - run: cargo build --workspace --locked
       - run: cargo test --workspace --locked --no-fail-fast
 
   # The crate notices packed into each release follow Cargo.lock: after a dependency change, run the generate line below

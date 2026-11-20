@@ -30,6 +30,8 @@ Claude Code sessions that run on others (runners), with cockpit's hub on each ru
 - **`cockpit app install` keeps a remote desk's `cockpit.json`**, so updates no longer turn the desk back into a local
   install.
 - Install, update and release links point at this fork; its releases are its own.
+- The macOS CI jobs run in their own workflow, `check-macos`: GitHub's macOS arm64 runners are often all taken, and a
+  job no runner picks up is cancelled, which failed `check` on most pushes.
 - `scripts/desk.sh` sets both ends up (`build`, `runner`, `desk <machine>`).
 
 ## Setting it up

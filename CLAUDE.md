@@ -45,6 +45,8 @@ hub's TCP side, `app/mods/cockpit/extra.js` or anything that names a terminal by
 - `app/tests/hub-leak.test.mjs` "a read that keeps giving up with no timer…" is flaky (about 2 runs in 6) on upstream's
   code too.
 - `hc send` delivers text as a message, so it cannot run a slash command such as `/reload-plugins`.
+- CI: `check` runs on Linux; the macOS jobs (`browser`, `rust-macos`) are in `check-macos`, which often waits for a
+  runner and is cancelled when none comes. A cancelled `check-macos` is GitHub's capacity, not a failure.
 
 ## Keeping up with upstream
 

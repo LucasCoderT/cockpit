@@ -1,0 +1,42 @@
+name: check-macos
+
+# The jobs that need a macOS runner, apart from `check` (this fork): GitHub's macOS arm64 runners are often all taken,
+# and a job no runner picks up is cancelled, which would fail the whole check. Here a missed Mac only marks this run.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push supersedes the run before it, so a queue of waiting Mac jobs does not build up.
+concurrency:
+  group: check-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/cockpit-ci/electron
+          key: electron-${{ runner.arch }}-${{ hashFiles('browser/pins.json') }}
+      - run: sh scripts/browser-smoke.sh
+
+  rust-macos:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: herdr/tui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: herdr/tui
+      - run: cargo build --workspace --locked
+      - run: cargo test --workspace --locked --no-fail-fast

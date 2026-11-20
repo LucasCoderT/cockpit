@@ -591,7 +591,8 @@ mod tests {
             if let Some(pid) = std::fs::read_to_string(&at).ok().and_then(|t| t.trim().parse().ok()) {
                 break pid;
             }
-            assert!(started.elapsed() < std::time::Duration::from_secs(10), "the stand-in never started");
+            // A busy CI runner can take seconds to copy and start a test binary this size.
+            assert!(started.elapsed() < std::time::Duration::from_secs(30), "the stand-in never started");
             std::thread::sleep(std::time::Duration::from_millis(20));
         };
         std::thread::sleep(std::time::Duration::from_millis(100));
