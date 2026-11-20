@@ -10,7 +10,8 @@ use std::time::{Duration, Instant};
 
 /// What the starter may hand on: where its ssh agent and temp folder are, and its language.
 fn from_starter(key: &str) -> bool {
-    matches!(key, "SSH_AUTH_SOCK" | "TMPDIR" | "LANG" | "LC_ALL") || key.starts_with("LC_")
+    // COCKPIT_HUB_LISTEN: `COCKPIT_HUB_LISTEN=<ip> cockpit hub start` is how a runner's hub is put on its network.
+    matches!(key, "SSH_AUTH_SOCK" | "TMPDIR" | "LANG" | "LC_ALL" | "COCKPIT_HUB_LISTEN") || key.starts_with("LC_")
 }
 
 /// What the hub never takes, even from the login shell: a terminal's or a window's identity, the binaries and sockets
@@ -183,9 +184,11 @@ mod tests {
             ("SSH_AUTH_SOCK", "/tmp/agent.sock"),
             ("LANG", "en_GB.UTF-8"),
             ("CLAUDECODE", "1"),
+            ("COCKPIT_HUB_LISTEN", "100.64.0.10"),
         ]);
         let login = pairs(&[("PATH", "/opt/homebrew/bin:/usr/bin"), ("CLAUDE_CONFIG_DIR", "/Users/me/.claude-work"), ("HC_SESSION", "x"), ("PWD", "/")]);
         let env = settled(&starter, &login, std::path::Path::new("/Users/me"), std::path::Path::new("/bin/zsh"), "me");
+        assert_eq!(env["COCKPIT_HUB_LISTEN"], "100.64.0.10", "the address a runner's hub was started on stays");
         assert_eq!(env["PATH"], "/opt/homebrew/bin:/usr/bin");
         assert_eq!(env["CLAUDE_CONFIG_DIR"], "/Users/me/.claude-work", "the person's own settings come from their profile");
         assert_eq!((env["SSH_AUTH_SOCK"].as_str(), env["LANG"].as_str()), ("/tmp/agent.sock", "en_GB.UTF-8"));

@@ -5,6 +5,10 @@ Each version is tagged `v<version>` and has a GitHub release with these notes, b
 plugin, share the version with the apps (`herdr/tui/Cargo.toml`), whose binaries the release builds; the section for it
 must be here first.
 
+## Unreleased
+
+- Fork: `COCKPIT_HUB_LISTEN` reaches the hub again (its login-shell environment dropped it), and a runner's config can say `"hubListen": "<ip>"` so any hub started there listens on its network
+
 ## 1.2.1 (2026-11-20)
 
 - Fork: the two-way remote desk from creatorofuniverses/cockpit: every app action reaches the runner through herdr-core, and a runner's show panes and window calls are relayed to the desk

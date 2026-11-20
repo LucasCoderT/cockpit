@@ -12,6 +12,9 @@ Claude Code sessions that run on others (runners), with cockpit's hub on each ru
   `herdr-app ls/status`) are relayed to the desk over the hub's authenticated window channel.
 - **`"window": "desk"`** in a runner's `~/.config/cockpit/config.json`: window calls go to the desk even where the
   runner has a Herdr app installed (otherwise a local `herdr-app` wins and `show` panes open on the runner's screen).
+- **`"hubListen": "<ip>"`** in a runner's config: its hub listens there whoever starts it (a session, a window, after
+  an idle exit). Upstream's `COCKPIT_HUB_LISTEN=<ip> cockpit hub start` never reached the hub in 1.2.0, whose
+  environment is the login shell's; the fork keeps that variable too.
 - **Notifications reach the desk.** Behind other windows, a remote desk posts a runner's notification as a system
   notification on the desk (the Cockpit notifier on macOS, `notify-send` on Linux), and a click on it
   (`cockpit focus herdr-app:<row>`) is handed to the desk's mod.

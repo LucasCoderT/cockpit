@@ -4,8 +4,8 @@
 #
 #   sh scripts/desk.sh build                    this checkout's release binary into ~/.config/cockpit/herdr/bin
 #   sh scripts/desk.sh runner [--listen <ip>]   on the runner: its config says "window": "desk" (show panes, window calls
-#                                               and notifications go to the desk) and its hub listens on <ip> (default
-#                                               its Tailscale IPv4) as well as on its own socket
+#                                               and notifications go to the desk) and "hubListen": <ip> (default its
+#                                               Tailscale IPv4), where its hub listens as well as on its own socket
 #   sh scripts/desk.sh desk <machine>           on the desktop: this checkout's mod in the Herdr app, and cockpit.json
 #                                               pointing at <machine>'s hub (its paths and address read through
 #                                               herdr-core)
@@ -38,14 +38,15 @@ runner() {
   command -v jq >/dev/null || die "jq is needed"
   if [ -f "$CONFIG" ]; then
     cp "$CONFIG" "$CONFIG.bak"
-    jq '.window = "desk"' "$CONFIG.bak" >"$CONFIG"
+    jq --arg l "$listen" '.window = "desk" | .hubListen = $l' "$CONFIG.bak" >"$CONFIG"
   else
     mkdir -p "$(dirname "$CONFIG")"
-    echo '{"window": "desk"}' >"$CONFIG"
+    jq -n --arg l "$listen" '{window: "desk", hubListen: $l}' >"$CONFIG"
   fi
-  echo "$CONFIG says \"window\": \"desk\" (the previous one is config.json.bak)"
+  echo "$CONFIG says \"window\": \"desk\", \"hubListen\": \"$listen\" (the previous one is config.json.bak)"
+  # Any hub started from now on listens there, whoever starts it.
   cockpit hub stop >/dev/null 2>&1 || true
-  COCKPIT_HUB_LISTEN=$listen cockpit hub start >/dev/null
+  cockpit hub start >/dev/null
   echo "hub listening on $listen and on its own socket"
   echo "note: over TCP a hub off loopback answers reads only, this machine's own Herdr window included"
 }
