@@ -559,8 +559,8 @@ impl Doctor {
         if !registered.is_empty() && Path::new(registered).is_dir() {
             ok("install.plugin", &format!("herdr plugin at {registered}"));
         } else {
-            fail("install.plugin", "herdr plugin not installed → herdr plugin install quaresc/cockpit/herdr --yes")
-                .run("herdr plugin install quaresc/cockpit/herdr --yes");
+            fail("install.plugin", "herdr plugin not installed → herdr plugin install LucasCoderT/cockpit/herdr --yes")
+                .run("herdr plugin install LucasCoderT/cockpit/herdr --yes");
         }
         let linked = readlink(&self.link);
         if linked == *registered {
@@ -721,7 +721,7 @@ impl Doctor {
             }
         }
         if installed.is_empty() {
-            let line = "Claude plugin not installed → /plugin install cockpit --marketplace quaresc/cockpit";
+            let line = "Claude plugin not installed → /plugin install cockpit --marketplace LucasCoderT/cockpit";
             if is_default {
                 fail("claude.plugin", line);
             } else {

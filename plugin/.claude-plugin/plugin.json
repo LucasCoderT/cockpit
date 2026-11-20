@@ -6,7 +6,7 @@
     "name": "quaresc"
   },
   "license": "MIT",
-  "repository": "https://github.com/quaresc/cockpit",
+  "repository": "https://github.com/LucasCoderT/cockpit",
   "types": "./types/index.d.ts",
   "icon": "./.claude-plugin/icon.png"
 }

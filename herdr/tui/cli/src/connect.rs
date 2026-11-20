@@ -391,7 +391,7 @@ fn chosen(ids: &[String], all: impl Fn(&Target) -> bool) -> Vec<&'static Target>
     ids.iter()
         .map(|id| {
             if agent::get(id).is_some_and(|a| a.id == "claude") {
-                fail("Claude Code gets cockpit's tools from its plugin: /plugin install cockpit --marketplace quaresc/cockpit");
+                fail("Claude Code gets cockpit's tools from its plugin: /plugin install cockpit --marketplace LucasCoderT/cockpit");
             }
             target(id).unwrap_or_else(|| fail(&format!("cockpit cannot connect {id}: its MCP config is not documented where cockpit can write it\n{USAGE}")))
         })

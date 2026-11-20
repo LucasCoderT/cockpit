@@ -346,8 +346,8 @@ fn setup(io: &mut Io) {
             plugins.as_array().into_iter().flatten().find(|p| p["plugin_id"] == "cockpit").and_then(|p| p["plugin_root"].as_str()).map(str::to_string);
         let root = match registered {
             Some(root) => Some(root),
-            None if io.yes("\nInstall cockpit's herdr plugin (herdr plugin install quaresc/cockpit/herdr)?", true) => {
-                run(&["herdr", "plugin", "install", "quaresc/cockpit/herdr", "--yes"]);
+            None if io.yes("\nInstall cockpit's herdr plugin (herdr plugin install LucasCoderT/cockpit/herdr)?", true) => {
+                run(&["herdr", "plugin", "install", "LucasCoderT/cockpit/herdr", "--yes"]);
                 let plugins = files::load(&home.join(".config/herdr/plugins.json")).unwrap_or(Value::Null);
                 plugins.as_array().into_iter().flatten().find(|p| p["plugin_id"] == "cockpit").and_then(|p| p["plugin_root"].as_str()).map(str::to_string)
             }
@@ -383,7 +383,7 @@ fn setup(io: &mut Io) {
         }
     }
     if installed.iter().any(|a| a.id == "claude") {
-        println!("\nClaude Code: /plugin install cockpit --marketplace quaresc/cockpit, then /cockpit:setup maps your connectors (tickets, CI, calendar).");
+        println!("\nClaude Code: /plugin install cockpit --marketplace LucasCoderT/cockpit, then /cockpit:setup maps your connectors (tickets, CI, calendar).");
     }
     println!("\nDone. cockpit doctor checks the whole setup at any time.");
 }

@@ -1008,7 +1008,7 @@ fn doctor_prints_a_line_per_check() {
     for line in [
         "fail  herdr 0.8.1: cockpit needs 0.9 or later → herdr update".to_string(),
         "ok    config.json".into(),
-        "fail  herdr plugin not installed → herdr plugin install quaresc/cockpit/herdr --yes".into(),
+        "fail  herdr plugin not installed → herdr plugin install LucasCoderT/cockpit/herdr --yes".into(),
         "ok    session \"eng-4\" on cockpit 0.1.0".into(),
         "fail  inbox: GitHub: 401".into(),
         "warn  space inbox is hidden in the sidebar → add { contains = \"  \" } before the hiding rule of ui.sidebar.spaces in ~/.config/herdr/config.toml"

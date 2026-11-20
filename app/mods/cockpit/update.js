@@ -12,7 +12,7 @@ import { layoutName } from "./screens.js";
 import { ago } from "./fresh.js";
 import { tokens, alpha, TEXT, RADIUS, Icon, Button, Spinner, Mono, Toggle, Badge } from "./ui.js";
 
-const RELEASES = "https://github.com/quaresc/cockpit/releases/tag/v";
+const RELEASES = "https://github.com/LucasCoderT/cockpit/releases/tag/v";
 
 /** An install this window started, followed again by the dialog the mod's reload in the middle of it makes anew. */
 const FLOW = "cockpit.update.flow";

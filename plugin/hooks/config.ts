@@ -133,6 +133,8 @@ export type Platform = {
 // ~/.config/cockpit/config.json, written by /cockpit:setup and shared with the herdr apps.
 export type Config = {
   reposDir: string
+  // A runner a remote desk shows: "desk" sends every window call to the desk, even where a Herdr app is installed.
+  window?: 'local' | 'desk'
   github: { enabled: boolean; org: string }
   tickets: Tickets
   ci: Ci

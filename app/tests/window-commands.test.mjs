@@ -12,8 +12,8 @@ const folder = new URL("mods/cockpit/", app);
 // The mod loaded in a VM with Herdr's natives stubbed. Every effect a command could have is recorded: hub actions and
 // requests, cockpit CLI runs, Herdr commands run, overlays opened, shared values set. `sandbox` says what the window's
 // own environment holds (person.js's testKeys).
-async function fixture({ layout = "cockpit", shown = "home", sandbox = false, focusedPane = { terminal: "t3", agent: "t3" }, spacesList = [] } = {}) {
-  const acts = [], requests = [], clis = [], calls = [], notices = [], overlays = [], urls = [], sets = [];
+async function fixture({ layout = "cockpit", shown = "home", sandbox = false, focusedPane = { terminal: "t3", agent: "t3" }, spacesList = [], active = true, notifier = 0 } = {}) {
+  const acts = [], requests = [], clis = [], calls = [], notices = [], overlays = [], urls = [], sets = [], execs = [];
   const shared = { layout, "cockpit.app": shown };
   const tree = () => {
     const now = shared["cockpit.app"];
@@ -30,9 +30,9 @@ async function fixture({ layout = "cockpit", shown = "home", sandbox = false, fo
       agents: () => [], spaces: () => spacesList, run: (...a) => calls.push(a), notify: (n) => notices.push(n),
       setShared: (k, v) => (sets.push(k), (shared[k] = v)), shared: (k) => shared[k] ?? null, layout: () => tree(), focused: () => focusedPane,
       openOverlay: (o) => (overlays.push(o), "o1"), closeOverlay: () => {}, props: () => ({}), settings: () => ({}), theme: () => ({}),
-      keys: () => [], commands: () => [], panes: () => [], window: () => ({ platform: "macos", active: true }), layouts: () => [],
+      keys: () => [], commands: () => [], panes: () => [], window: () => ({ platform: "macos", active }), layouts: () => [],
       appHome: () => "/tmp/cc-x/herdr-home", home: () => "/h", readTextFile: async () => null, placement: () => null, machines: () => [],
-      exec: async (cmd) => (cmd === "/usr/bin/env" ? { code: 0, stdout: env, stderr: "" } : { code: 1, stdout: "", stderr: "" }),
+      exec: async (cmd, args) => (execs.push([cmd, ...(args ?? [])]), cmd === "/usr/bin/env" ? { code: 0, stdout: env, stderr: "" } : cmd.endsWith("cockpit-notify") ? { code: notifier, stdout: "", stderr: "" } : { code: 1, stdout: "", stderr: "" }),
     },
     "gpui-base": {
       VirtualListScrollHandle: { new: () => ({ scroll_to_item() {}, release() {} }) },
@@ -81,7 +81,6 @@ async function fixture({ layout = "cockpit", shown = "home", sandbox = false, fo
     'export { default as Routines } from "./routines.js";',
     'export { default as Inbox } from "./inbox.js";',
     'export { default as Mail } from "./mail.js";',
-    'export { default as Aq } from "./aq.js";',
     'export { default as Meetings } from "./meetings.js";',
     'export { default as Todo } from "./todo.js";',
     'export { default as Show } from "./show.js";',
@@ -98,7 +97,7 @@ async function fixture({ layout = "cockpit", shown = "home", sandbox = false, fo
   const m = new SourceTextModule(entry, { context });
   await m.link(load);
   await m.evaluate();
-  return { mod: m.namespace, acts, requests, clis, calls, notices, overlays, urls, sets, shared };
+  return { mod: m.namespace, acts, requests, clis, calls, notices, overlays, urls, sets, shared, execs };
 }
 
 /** A context whose timers run at once and whose spawned work can be awaited. */
@@ -657,7 +656,6 @@ const SHAPES = {
   "home:seen:*": ["home:seen:a:t3", "act"], "home:pin:*": ["home:pin:a:t3", "act"], "home:fork:*": ["home:fork:a:t3", "act"], "home:merge:*": ["home:merge:a:t3", "act"], "home:archive:*": ["home:archive:a:t3", "act"],
   "inbox:act:*": ["inbox:act:0", "act"], "inbox:pick": ["inbox:pick", "act"], "inbox:alike": ["inbox:alike", "act"], "inbox:fold": ["inbox:fold", "nav"],
   "inbox:state:*:*": ["inbox:state:ENG-7:Done", "act"],
-  "aq:act:*:*": ["aq:act:cancel:3f2a-91", "act"], "aq:act:extend:*:*": ["aq:act:extend:3f2a-91:30m", "act"],
   "mail:*:*": ["mail:reply:m1", "act"], "meetings:*:*": ["meetings:prepare:e1", "act"], "meetings:golist:*": ["meetings:golist:e1", "nav"],
   "mode:*:*": ["mode:acceptEdits:0123", "act"], "pick:model:*": ["pick:model:haiku|claude%3A1", "act"], "pick:effort:*": ["pick:effort:high|claude%3A1", "act"],
   "pick:fast:on": ["pick:fast:on|claude%3A1", "act"], "pick:fast:off": ["pick:fast:off|claude%3A1", "act"], "pick:fast:*": ["pick:fast:on|claude%3A1", "act"], "attach:file": ["attach:file", "nav"], "attach:clipboard": ["attach:clipboard", "act"],
@@ -727,8 +725,6 @@ function views(mod, f) {
   Object.assign(mail, { toasts: toasts(), handle: focus(), model: { messages: [{ id: "m1", fromName: "Maya", raw: { id: "m1" } }] }, hubAct: async (_cx, action) => f.effects.push(`mail ${action}`), openReading() {} });
   const meetings = Object.create(mod.Meetings.prototype);
   Object.assign(meetings, { toasts: toasts(), handle: focus(), open: new Set(), model: { meetings: [{ id: "e1", raw: { id: "e1" } }] }, hubAct: async (_cx, action) => f.effects.push(`meetings ${action}`), focusOn() {} });
-  const aq = Object.create(mod.Aq.prototype);
-  Object.assign(aq, { toasts: toasts(), handle: focus(), confirm: null, remote: false, visible: true, item: (id) => ({ id, acts: ["cancel", "extend", "release"] }) });
   const todo = Object.create(mod.Todo.prototype);
   Object.assign(todo, { toasts: toasts(), handle: focus(), menuAction: (action) => f.effects.push(`todo ${action}`) });
   const show = Object.create(mod.Show.prototype);
@@ -765,8 +761,8 @@ function views(mod, f) {
   Object.assign(settings, { p: {}, tab: "options", all: false, at: 0, optionAt: 0, pointed: true, asking: null, report: null, toasts: toasts(), handle: focus(), rowAt: {},
     options: [{ key: "chat.nextSteps", title: "Suggest next prompts", kind: "toggle", value: false }, { key: "agents.pace", title: "Pace of the 7-day limit", kind: "choice", value: "week", choices: [{ value: "week", label: "Whole week" }, { value: "weekdays", label: "Weekdays" }] }],
     saving: new Set(), errors: {}, fields: new Map(), drafts: {}, field: null, hubState: "live", v: null, checking: false });
-  const all = { sidebar, home: h, runbook, monitor, routines, inbox, mail, meetings, aq, todo, show, start, review, code, palette, chat, top, update, settings };
-  const armed = () => ({ home: h.confirm, runbook: runbook.confirm, monitor: monitor.confirm, routines: routines.confirm, inbox: inbox.dialog, aq: aq.confirm, chat: chat.confirm ?? chat.merging, startTyped: start.started, homeSel: h.sel, picked: runbook.picked.size,
+  const all = { sidebar, home: h, runbook, monitor, routines, inbox, mail, meetings, todo, show, start, review, code, palette, chat, top, update, settings };
+  const armed = () => ({ home: h.confirm, runbook: runbook.confirm, monitor: monitor.confirm, routines: routines.confirm, inbox: inbox.dialog, chat: chat.confirm ?? chat.merging, startTyped: start.started, homeSel: h.sel, picked: runbook.picked.size,
     options: update.pointed && settings.pointed ? null : "armed", updateStep: update.at });
   return { all, armed };
 }
@@ -820,7 +816,7 @@ test("every registered command, sent from outside the window, does nothing but n
       const armed = plain(v.armed());
       // A mode that asks less, named without the chat's own key, goes through its confirm, which only a click answers.
       if (shape === "mode:*:*") armed.chat = null;
-      assert.deepEqual(armed, { home: null, runbook: null, monitor: null, routines: null, inbox: null, aq: null, chat: null, startTyped: false, homeSel: null, picked: 0, options: null, updateStep: 0 }, `${layout}: \`${sample}\` arms a confirm or picks something`);
+      assert.deepEqual(armed, { home: null, runbook: null, monitor: null, routines: null, inbox: null, chat: null, startTyped: false, homeSel: null, picked: 0, options: null, updateStep: 0 }, `${layout}: \`${sample}\` arms a confirm or picks something`);
     }
   }
 });
@@ -1037,4 +1033,24 @@ test("a notification a client sent is drawn plain: never cockpit's icon nor the 
   assert.equal(forged.icon, undefined, "no cockpit icon");
   assert.equal(forged.title, "From an agent's tools (app:t3): ✅ Tests passed");
   assert.deepEqual(forged.action, { name: "cockpit.target:inbox:ENG-412" }, "its click still only brings the row into view");
+});
+
+test("a remote desk behind other windows posts the runner's notification here, its clicks leading into this window", async () => {
+  const { mod, notices, clis, execs } = await fixture({ active: false });
+  const { cx, settled } = context();
+  mod.deliver({ title: "✅ CI passed", body: "api#9", action: "act:ci:https://github.com/acme/api/pull/9", row: "inbox:https://github.com/acme/api/pull/9", buttons: ["Merge=act:merge:https://github.com/acme/api/pull/9", "Open=https://github.com/acme/api/pull/9"] }, { machine: "runner", host: "100.64.0.10" }, cx);
+  await settled();
+  const posted = execs.filter(([cmd]) => cmd.endsWith("cockpit-notify"));
+  assert.deepEqual(plain(posted), [["/h/.config/cockpit/Cockpit.app/Contents/MacOS/cockpit-notify", "post", "✅ CI passed", "api#9", "herdr-app:inbox:https://github.com/acme/api/pull/9", "Merge=herdr-app:act:merge:https://github.com/acme/api/pull/9", "Open=https://github.com/acme/api/pull/9"]]);
+  assert.equal(clis.length, 0, "nothing goes to the runner's notifier");
+  assert.equal(notices.length, 0, "posted by the system, not drawn twice");
+});
+
+test("a remote desk without a notifier of its own says it as a toast", async () => {
+  const { mod, notices, clis } = await fixture({ active: false, notifier: 1 });
+  const { cx, settled } = context();
+  mod.deliver({ title: "Needs you", body: "api", action: "inbox:ENG-412" }, { machine: "runner", host: "100.64.0.10" }, cx);
+  await settled();
+  assert.equal(clis.length, 0);
+  assert.deepEqual(plain(notices.map((n) => n.title)), ["Needs you"]);
 });

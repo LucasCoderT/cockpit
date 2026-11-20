@@ -104,6 +104,8 @@ impl Sandbox {
                 ("HOME".into(), self.home().to_string_lossy().into_owned()),
                 ("PATH".into(), path),
                 ("HERDR_BIN_PATH".into(), self.root.join("bin/herdr").to_string_lossy().into_owned()),
+                // No Herdr app of the machine running the tests: a test that wants one hands its own.
+                ("HERDR_APP_BIN".into(), self.root.join("bin/no-herdr-app").to_string_lossy().into_owned()),
                 ("COCKPIT_TEST_DIR".into(), self.root.to_string_lossy().into_owned()),
                 ("COCKPIT_HERDR_DIR".into(), self.root.join("herdr").to_string_lossy().into_owned()),
                 // Notifications reach the fake receiver instead of the screen.

@@ -1,14 +1,14 @@
 # cockpit's apps, the hub they share and the commands the scripts call, all in the one `cockpit` binary, on the core crate.
 [workspace]
 resolver = "3"
-members = ["core", "hub", "agents", "inbox", "runbook", "show", "todo", "meetings", "monitor", "routines", "review", "mail", "palette", "update", "connectors", "aq", "cli"]
+members = ["core", "hub", "agents", "inbox", "runbook", "show", "todo", "meetings", "monitor", "routines", "review", "mail", "palette", "update", "connectors", "cli"]
 
 [workspace.package]
 version = "1.2.0"
 edition = "2024"
 rust-version = "1.90"
 license = "MIT"
-repository = "https://github.com/quaresc/cockpit"
+repository = "https://github.com/LucasCoderT/cockpit"
 publish = false
 
 [workspace.dependencies]

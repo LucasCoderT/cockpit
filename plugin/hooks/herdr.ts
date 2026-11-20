@@ -67,6 +67,7 @@ const APP_PATH = 'PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 export type AppAnswer = { value: Record<string, unknown> } | { error: string; kind: 'no_window' | 'may_have_run' | 'failed' }
 
 async function localApp($: $) {
+  if ((await loadConfig($)).window === 'desk') return false
   const found = await $.process.run(['sh','-c', `${APP_PATH}; command -v "\${HERDR_APP_BIN:-herdr-app}"`], {timeoutMs:5_000}).catch(() => undefined)
   return found?.exitCode === 0
 }

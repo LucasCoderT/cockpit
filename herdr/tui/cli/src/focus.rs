@@ -35,6 +35,11 @@ const TIMEOUT: Duration = Duration::from_secs(10);
 pub fn main(args: &[String]) {
     let [target] = args else { proc::fail(USAGE) };
     if let Some(rest) = target.strip_prefix(cockpit_core::notify::IN_APP) {
+        // A remote desk's window follows another machine's hub, not this one's: its mod brings the row into view.
+        if remote_desk() {
+            let _ = frontend::app_do(&format!("cockpit.target:{rest}"), &json!({}));
+            return frontend::with(Some(frontend::Frontend::App), terminal_forward);
+        }
         return frontend::with(Some(frontend::Frontend::App), || main(&[rest.to_string()]));
     }
     // A button only navigates: what it names is done from its row, by the person.
@@ -196,6 +201,12 @@ fn update() {
 
 /// The terminal app hosting herdr, as the last notification recorded it, brought forward on macOS: in Ghostty, the very
 /// window and tab where herdr runs, else the app.
+/// Whether this machine's Herdr app is a remote desk: its cockpit.json names the runner it reads.
+fn remote_desk() -> bool {
+    let text = std::fs::read_to_string(frontend::app_home().join("cockpit.json")).unwrap_or_default();
+    serde_json::from_str::<Value>(&text).is_ok_and(|v| v["machine"].as_str().is_some_and(|m| !m.trim().is_empty()))
+}
+
 fn terminal_forward() {
     let terminal = std::fs::read_to_string(files::cache().join("terminal-app")).unwrap_or_default();
     let terminal = terminal.trim_end_matches('\n');

@@ -2,7 +2,7 @@
 // the notification is about into view (where its other buttons are); the system's notification while it is behind,
 // whose click and buttons lead to the same row through `cockpit focus herdr-app:<target>`.
 
-import { notify, window as win } from "herdr";
+import { notify, exec, home, window as win } from "herdr";
 import * as hub from "./hub.js";
 import { openUpdate } from "./update.js";
 
@@ -15,11 +15,24 @@ const WHERE = { inbox: "the inbox", runbook: "the runbook", meeting: "Meetings",
  * (`from` names who) is drawn plain, never with cockpit's icon or a success or failure colour its words may claim.
  */
 export function deliver(n, install, cx) {
-  const always = Boolean(install?.machine) || install?.env?.COCKPIT_TOASTS === "always";
+  const remote = Boolean(install?.machine);
+  // A remote desk's hub runs on the runner, whose own screen nobody watches: behind, the desk posts it here.
+  if (remote && !win().active && install?.env?.COCKPIT_TOASTS !== "always") {
+    cx.spawn(async () => {
+      if (!(await postHere(n, install))) toast(n);
+    });
+    return;
+  }
+  const always = remote || install?.env?.COCKPIT_TOASTS === "always";
   if (!win().active && !always) {
     cx.spawn(async () => hub.cockpit(["notify", "--system", n.title ?? "", n.body ?? "", n.action ?? "", ...(n.buttons ?? [])]));
     return;
   }
+  toast(n);
+}
+
+/** Herdr's own toast, its click bringing the row the notification is about into view. */
+function toast(n) {
   const level = n.from ? "info" : (Object.entries(LEVEL).find(([mark]) => `${n.title ?? ""} ${n.body ?? ""}`.includes(mark))?.[1] ?? "info");
   const target = n.row || n.action || "";
   const labels = (n.buttons ?? []).map((b) => b.split("=")[0]).filter(Boolean);
@@ -34,6 +47,30 @@ export function deliver(n, install, cx) {
     timeout: level === "error" ? 12000 : 6000,
     ...(target ? { action: { name: `cockpit.target:${target}` } } : {}),
   });
+}
+
+/**
+ * A remote desk's system notification, posted on this machine: macOS through the Cockpit notifier app a local cockpit
+ * install built (`notifier` in cockpit.json names another), Linux through notify-send. A click leads into this window
+ * (`cockpit focus herdr-app:<row>`, which a remote desk hands to the mod). False when neither could post it.
+ */
+export async function postHere(n, install) {
+  const lead = (t) => (!t || /^https?:\/\//.test(t) ? t : `herdr-app:${t}`);
+  const buttons = (n.buttons ?? []).map((b) => {
+    const at = b.indexOf("=");
+    return at < 0 ? b : `${b.slice(0, at)}=${lead(b.slice(at + 1))}`;
+  });
+  const notifier = install?.notifier ?? `${home()}/.config/cockpit/Cockpit.app/Contents/MacOS/cockpit-notify`;
+  try {
+    if (win()?.platform === "macos") {
+      const r = await exec(notifier, ["post", n.title ?? "", n.body ?? "", lead(n.row || n.action || ""), ...buttons]);
+      return r.code === 0;
+    }
+    if (win()?.platform === "linux") return (await exec("notify-send", ["-a", "Cockpit", n.title ?? "", n.body ?? ""])).code === 0;
+  } catch {
+    // No notifier on this machine: the toast says it instead.
+  }
+  return false;
 }
 
 /** "https://github.com/acme/api/pull/4" out of that PR's URL or one of its pages, else the reference as given. */

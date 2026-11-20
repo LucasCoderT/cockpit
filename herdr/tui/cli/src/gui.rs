@@ -110,12 +110,6 @@ pub fn register() {
     views::register(Def { name: "review", docs: &[], dirs: Vec::new, build: cockpit_show::review::view, act: cockpit_show::review::act });
     views::register(Def { name: "home", docs: &["inbox", "ci"], dirs: crate::home::dirs, build: crate::home::view, act: crate::home::act });
     views::register(Def { name: "queue", docs: &["queue"], dirs: crate::queue::dirs, build: crate::queue::view, act: crate::queue::act });
-    views::register(Def { name: "aq", docs: &[], dirs: cockpit_aq::gui::dirs, build: cockpit_aq::gui::view, act: cockpit_aq::gui::act });
-    views::register(Def { name: "aq-log", docs: &[], dirs: cockpit_aq::gui::dirs, build: cockpit_aq::gui::log_view, act: |_, _| None });
-    cockpit_aq::gui::start(|| {
-        views::touch("aq");
-        views::touch("aq-log");
-    });
     views::register(Def { name: "options", docs: &[], dirs: Vec::new, build: crate::options::view, act: crate::options::act });
     views::register(Def {
         name: "usage",
@@ -399,6 +393,15 @@ pub fn install(from: &Path, home: &Path, link: bool) -> Result<Vec<String>, Stri
     let exe = std::env::current_exe().map_err(err)?;
     let env = install_env(std::env::vars());
     let info = json!({"bin": exe, "cache": files::cache(), "home": files::home(), "version": env!("CARGO_PKG_VERSION"), "env": env});
+    // A remote desk's cockpit.json names the runner it reads: an install or update of the mod keeps it.
+    let info = match files::load(&home.join("cockpit.json")) {
+        Some(mut desk) if desk["machine"].as_str().is_some_and(|m| !m.trim().is_empty()) => {
+            desk["version"] = json!(env!("CARGO_PKG_VERSION"));
+            lines.push(format!("kept the remote desk on {}", desk["machine"].as_str().unwrap_or_default()));
+            desk
+        }
+        _ => info,
+    };
     files::write(&home.join("cockpit.json"), &info).map_err(err)?;
     let (keys, skipped) = merge_keys(&files::load(&home.join("keys.json")).unwrap_or(json!({})), &files::load(&from.join("keys.json")).unwrap_or(json!({})));
     files::write(&home.join("keys.json"), &keys).map_err(err)?;
@@ -434,6 +437,25 @@ pub fn merge_keys(theirs: &Value, ours: &Value) -> (Value, Vec<(String, String, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_install_keeps_a_remote_desk_and_moves_its_version() {
+        let app = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../app");
+        let home = tempfile::tempdir().unwrap();
+        let desk = json!({"machine": "runner", "host": "100.64.0.10", "bin": "/home/sam/.local/bin/cockpit", "home": "/home/sam", "cache": "/home/sam/.cache/cockpit", "version": "0.1.0"});
+        files::write(&home.path().join("cockpit.json"), &desk).unwrap();
+        let lines = install(&app, home.path(), false).unwrap();
+        let kept = files::load(&home.path().join("cockpit.json")).unwrap();
+        assert_eq!(
+            (kept["machine"].as_str(), kept["host"].as_str(), kept["bin"].as_str()),
+            (Some("runner"), Some("100.64.0.10"), Some("/home/sam/.local/bin/cockpit"))
+        );
+        assert_eq!(kept["version"], env!("CARGO_PKG_VERSION"));
+        assert!(lines.iter().any(|l| l == "kept the remote desk on runner"), "{lines:?}");
+        files::write(&home.path().join("cockpit.json"), &json!({"bin": "/old"})).unwrap();
+        install(&app, home.path(), false).unwrap();
+        assert_ne!(files::load(&home.path().join("cockpit.json")).unwrap()["bin"], "/old", "a local install is written again");
+    }
 
     #[test]
     fn keys_merge_without_taking_the_persons() {

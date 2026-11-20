@@ -82,9 +82,9 @@ export const sleep = (cx, ms) => new Promise((resolve) => cx.timer.after(ms, () 
 const NOT_INSTALLED = "cockpit is not installed in this Herdr home";
 const READ_ONLY = "the remote cockpit client is read-only; this action needs a local cockpit installation";
 const REMOTE_READS = new Set(["ping", "view", "search", "fetch", "events", "history", "shown"]);
-const APPS = new Set(["inbox", "todo", "runbook", "meetings", "mail", "monitor", "routines", "aq", "show"]);
+const APPS = new Set(["inbox", "todo", "runbook", "meetings", "mail", "monitor", "routines", "show"]);
 /** The app behind a pinned space's name, as `cockpit focus space:<name>` gives it. */
-const SPACES = { inbox: "inbox", runbook: "runbook", "to-do": "todo", todo: "todo", meetings: "meetings", monitor: "monitor", routines: "routines", mail: "mail", aq: "aq" };
+const SPACES = { inbox: "inbox", runbook: "runbook", "to-do": "todo", todo: "todo", meetings: "meetings", monitor: "monitor", routines: "routines", mail: "mail" };
 
 /** Brings an app into view on this desktop, without a row to select. */
 function localShow(app) {
@@ -126,7 +126,7 @@ export const remoteMachine = () => installed?.value?.machine ?? null;
 export async function install() {
   if (installed && Date.now() - installed.at < 3000) return installed.value;
   const text = await readTextFile(`${appHome()}/cockpit.json`);
-  if (!text) throw new Error(`${NOT_INSTALLED}: run \`cockpit app install\`, or install cockpit first: github.com/quaresc/cockpit#install`);
+  if (!text) throw new Error(`${NOT_INSTALLED}: run \`cockpit app install\`, or install cockpit first: github.com/LucasCoderT/cockpit#install`);
   const value = installed?.text === text ? installed.value : JSON.parse(text);
   if (value.machine !== undefined && (typeof value.machine !== "string" || !value.machine.trim() || typeof value.host !== "string" || !value.host.trim())) {
     throw new Error("a remote cockpit install needs a machine and host");

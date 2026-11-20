@@ -65,7 +65,6 @@ const OVERVIEW = [
     // The run that needs a look, else the routines.
     open: (v) => (v.look?.length ? hub.go({ app: "routines", key: v.look[0].key }).catch(() => {}) : show("routines")),
   },
-  { view: "aq", space: "aq", label: "aq", icon: "cpu", line: (v) => v.line ?? null },
 ];
 
 const COLUMNS = [
@@ -735,13 +734,13 @@ export default class Home {
                   .text_color(k.foreground)
                   .child("cockpit puts every coding agent beside its work: whose move it is, its ticket, PR, CI and deploy, with your inbox, runbooks, meetings and releases one key away."),
               )
-              .child(way("install-claude", "In Claude Code", ["/plugin install cockpit --marketplace quaresc/cockpit", "/cockpit:setup"]))
-              .child(way("install-shell", "With any other agent, in a shell", ["curl -fsSL https://raw.githubusercontent.com/quaresc/cockpit/main/install.sh | sh", "cockpit setup"]))
+              .child(way("install-claude", "In Claude Code", ["/plugin install cockpit --marketplace LucasCoderT/cockpit", "/cockpit:setup"]))
+              .child(way("install-shell", "With any other agent, in a shell", ["curl -fsSL https://raw.githubusercontent.com/LucasCoderT/cockpit/main/install.sh | sh", "cockpit setup"]))
               .child(
                 h_flex()
                   .gap(10)
                   .items_center()
-                  .child(Button("install-guide", { label: "Install guide", icon: "external", variant: "outline", size: "sm", onClick: () => hub.openUrl("https://github.com/quaresc/cockpit#install").catch(() => {}) }))
+                  .child(Button("install-guide", { label: "Install guide", icon: "external", variant: "outline", size: "sm", onClick: () => hub.openUrl("https://github.com/LucasCoderT/cockpit#install").catch(() => {}) }))
                   .child(div().flex_1().text_size(TEXT.xs).text_color(k.dim).child("Home fills in by itself once setup is done; your agents stay in the sidebar meanwhile.")),
               ),
           ),
@@ -914,7 +913,7 @@ export default class Home {
     // Meetings have their own card above, unless the calendar fails to read.
     // Mail shows wherever it is set up, pinned or not.
     const calendarFails = Boolean(failing(this.apps.meetings?.sources, Date.now()));
-    const items = OVERVIEW.filter((o) => (o.view !== "meetings" || calendarFails) && ((this.pinned ?? DEFAULT_PINNED).includes(o.space) || (o.view === "mail" && this.apps.mail?.enabled) || o.view === "aq"))
+    const items = OVERVIEW.filter((o) => (o.view !== "meetings" || calendarFails) && ((this.pinned ?? DEFAULT_PINNED).includes(o.space) || (o.view === "mail" && this.apps.mail?.enabled)))
       // The app's own line first; a failing source under it, as its numbers may be old.
       .map((o) => ({ ...o, line: this.apps[o.view] ? o.line(this.apps[o.view]) : null, source: this.apps[o.view] ? sourceLine(o, this.apps[o.view]) : null }))
       .filter((o) => o.line || o.source);

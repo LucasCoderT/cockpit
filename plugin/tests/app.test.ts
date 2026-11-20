@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
+import { forgetConfig } from '../hooks/config'
 import { forgetFacts, reportFacts, transcriptPath } from '../hooks/facts'
 import { appCall, exportAppPane, findTerminal, frontendOf, herdrHere } from '../hooks/herdr'
 import type { AppSpace } from '../hooks/herdr'
@@ -57,7 +58,7 @@ function fake(env: Record<string, string>, ancestry = 1) {
       },
     },
   } as unknown as Parameters<typeof reportFacts>[0]
-  return { $, patches, exported }
+  return { $, patches, exported, files }
 }
 
 test('a terminal is found with its pane, tab and space, and a browser terminal by its program', async () => {
@@ -142,3 +143,21 @@ test('appCall maps exit 3 and 4 to no_window and may_have_run', async () => {
     expect(await appCall(f.$,['status'])).toEqual({error:'window unavailable',kind});
   }
 });
+
+test("a runner whose config says window: desk sends window calls to the desk, its own Herdr app aside", async () => {
+  forgetConfig()
+  const f = fake({ HC_TERMINAL_ID: 't3' })
+  f.files.set(`${HOME}/.config/cockpit/config.json`, JSON.stringify({ window: 'desk' }))
+  const calls: string[][] = []
+  f.$.process.run = async (argv: string[]) => {
+    calls.push(argv)
+    if (argv.join(' ').includes('command -v')) return ran(0, '/home/me/.local/bin/herdr-app')
+    return ran(0, JSON.stringify({ spaces: SPACES }))
+  }
+  try {
+    expect(await appCall(f.$, ['ls'])).toEqual({ value: { spaces: SPACES } })
+    expect(calls.at(-1)?.slice(-2)).toEqual(['window', 'ls'])
+  } finally {
+    forgetConfig()
+  }
+})

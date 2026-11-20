@@ -203,8 +203,12 @@ pub fn set_relay(f: Relay) {
     let _ = RELAY.set(f);
 }
 
-/// Whether this machine has the local Herdr app command.
+/// Whether this machine has the local Herdr app command. A runner whose config says `"window": "desk"` has none: its
+/// window is the remote desk following its hub, even where a Herdr app is installed.
 pub fn local_app() -> bool {
+    if files::config()["window"] == "desk" {
+        return false;
+    }
     static LOCAL: OnceLock<bool> = OnceLock::new();
     *LOCAL.get_or_init(|| {
         let name = program("herdr-app", "HERDR_APP_BIN");

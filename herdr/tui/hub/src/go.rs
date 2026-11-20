@@ -19,7 +19,6 @@ fn space_of(app: &str) -> Option<&'static str> {
         "monitor" => Some("monitor"),
         "routines" => Some("routines"),
         "mail" => Some("mail"),
-        "aq" => Some("aq"),
         _ => None,
     }
 }
