@@ -10,7 +10,7 @@ import * as extra from "./extra.js";
 import { followBrowser } from "./web.js";
 import { deliver } from "./notify.js";
 import { rowsOf, countsOf, agentStatus, needing } from "./fleet.js";
-import { show, showWork, showPanes, screens, layoutName } from "./screens.js";
+import { show, showWork, showPanes, screens, layoutName, stripLeads } from "./screens.js";
 import { togglePalette, openRecap, hint, keyFor, keyText, lend } from "./commands.js";
 import { inFront } from "./front.js";
 import { UpdateTag, pending as pendingUpdate } from "./update.js";
@@ -249,11 +249,12 @@ export default class Sidebar {
     const counts = countsOf(model.value);
     // Cockpit Chat has a Needs screen of its own: the waiting count is its, and its keys stay in the tooltips.
     const chat = layoutName() === "cockpit-chat";
-    const home = screens().list.find((x) => x.child === "home");
-    const lead = [
-      { child: "home", label: "Home", icon: "layout-dashboard", command: home.command, count: chat ? null : counts.unread || null, tone: counts.needs_you ? k.blocked : null },
-      ...(chat ? [{ child: "needs", label: "Needs you", icon: "hand", command: "cockpit.go:needs", count: needing(model.rows ?? []).length || null, tone: k.blocked }] : []),
-    ];
+    // Home first; Cockpit Chat adds its Needs screen and the Tab screen, where the tab's panes are (screens.stripLeads).
+    const leadCount = {
+      home: { count: chat ? null : counts.unread || null, tone: counts.needs_you ? k.blocked : null },
+      needs: { count: needing(model.rows ?? []).length || null, tone: k.blocked },
+    };
+    const lead = stripLeads().map((s) => ({ ...s, icon: s.child === "home" ? "layout-dashboard" : s.icon, count: null, tone: null, ...(leadCount[s.child] ?? {}) }));
     const paletteKey = keyFor("cockpit.palette");
 
     return v_flex()
@@ -378,8 +379,8 @@ export default class Sidebar {
       .children(
         items.map((a) => {
           const on = active === a.child;
-          // Home (and Needs) stay first; the pinned apps move by drag and drop, the config's order following.
-          const movable = a.child !== "home" && a.child !== "needs";
+          // Home (and Needs and Tab) stay first; the pinned apps move by drag and drop, the config's order following.
+          const movable = !["home", "needs", "tab"].includes(a.child);
           const d = this.appDrag;
           const dragging = d && d.from === a.child && d.over !== a.child;
           const over = d && d.over === a.child && d.from !== a.child;

@@ -7,6 +7,7 @@ must be here first.
 
 ## Unreleased
 
+- Fork: Cockpit Chat's app strip has a Tab tile after Home and Needs you, for the tab's own panes without cmd-alt-t
 - Fork: the mod follows Herdr's fonts: Cockpit Chat's conversation in the terminal font at its size (its reading column widening with it), every monospaced piece in the terminal font instead of JetBrains Mono, and the text sizes after Herdr's UI text size
 - Fork: Cockpit Chat on a remote desk and across hubs: a runner's sessions are read by their own addresses (the chat of a runner's agent was empty), each session's chat, queue and actions go to its own hub, driven sessions keep their key, a new session starts on the machine in front, and Start work's plan reaches a runner through `cockpit hub fetch`
 - Fork: several hubs in one window (upstream #51): cockpit.json's `extra` lists this machine's cockpit and other runners; every hub's agents in one list, acted on at their own hub; the apps behind a machine switch (`cockpit.hub:<name>`); each session's show panes from its own hub; notifications, window commands and usage limits from every hub (`desk.sh desk <runner> --with-local --runner <other>`)

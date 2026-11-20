@@ -70,6 +70,18 @@ export function screens() {
   return LAYOUTS[layoutName()];
 }
 
+/**
+ * The screens the sidebar's app strip leads with, before the pinned apps: Home, and in Cockpit Chat its Needs screen
+ * and the Tab screen (the tab's own panes, which the chat otherwise covers).
+ */
+const LEADS = { cockpit: ["home"], "cockpit-chat": ["home", "needs", "tab"] };
+
+/** A layout's lead screens, each `{child, label, icon, command}` (the shown layout's when none is named). */
+export function stripLeads(name = layoutName()) {
+  const s = LAYOUTS[name] ?? LAYOUTS.cockpit;
+  return (LEADS[name] ?? LEADS.cockpit).map((child) => s.list.find((x) => x.child === child)).filter(Boolean);
+}
+
 /** A named layout's screens, or null when cockpit has no such layout. */
 export function screensOf(name) {
   return LAYOUTS[name] ?? null;
