@@ -91,6 +91,12 @@ test("a runner's agent stays done and unread only while this desktop's Herdr sti
   assert.equal(f.fleet.countsOf({ counts: { unread: 3 }, agents: model.agents }).unread, 3);
 });
 
+test("a runner's driven session keeps its key: it has no terminal to put at a desk address", async () => {
+  const f = await fixture();
+  const rows = f.fleet.rowsOf({ remote: "runner", agents: [{ terminal: "claude:1794-0", driven: true, stage: "idle" }, { address: "t7", terminal: "app:t7", stage: "idle" }] });
+  assert.deepEqual(JSON.parse(JSON.stringify(rows.map((r) => [r.terminal, r.remote]))), [["claude:1794-0", "runner"], ["app:runner/t7", "runner"]]);
+});
+
 test("a remote desk lists its extra hubs' agents beside the runner's, at their own addresses, and counts them", async () => {
   const f = await fixture();
   const model = {

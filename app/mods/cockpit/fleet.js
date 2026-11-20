@@ -39,6 +39,8 @@ export function rowsOf(value) {
   if (!value?.remote) return extra.length ? [...rows, ...extra] : rows;
   const status = deskStatus();
   return [...rows.map((r) => {
+    // A session cockpit drives has a key, not a terminal: the same on the runner and here.
+    if (r.driven) return { ...r, remote: value.remote };
     const address = `${value.remote}/${addressOf(r)}`;
     const desk = status.get(address);
     const rests = r.stage === "done" && desk !== undefined && desk !== "done";

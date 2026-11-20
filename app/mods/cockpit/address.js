@@ -4,6 +4,8 @@ export function toRunner(address, machine, origin = "desktop") {
   if (!machine || typeof address !== "string") return address;
   const prefix = address.startsWith("app:") ? "app:" : "";
   const raw = address.slice(prefix.length);
+  // Not a terminal address: a driven session's key (`claude:1794…-0`) or a herdr pane id (`w9:p1`), the same on both ends.
+  if (raw.includes(":")) return address;
   if (!raw.includes("/")) {
     if (origin === "runner") return address;
     throw new Error(`${address} is not on ${machine}: a desktop terminal needs its machine prefix`);

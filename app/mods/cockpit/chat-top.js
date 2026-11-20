@@ -12,7 +12,7 @@ import { sharing } from "./feed.js";
 import { runCommand, openNew, hint, settle, settlePanel } from "./commands.js";
 import { syncBrowser, releaseBrowser } from "./browser.js";
 import { tokens, TEXT, Icon, Spinner, dur, openMenu, viewport, AgentLogo } from "./ui.js";
-import { agentStatus } from "./fleet.js";
+import { agentStatus, rowsOf } from "./fleet.js";
 
 const BAR_H = 56;
 const CAPSULE_H = 38;
@@ -131,7 +131,8 @@ export default class ChatTop {
       { views: ["agents"] },
       (m, cx) => {
         if (m.view === "agents") {
-          this.rows = m.value?.agents ?? [];
+          // As the desk reads them: a runner's at its addresses, every hub's together (fleet.rowsOf).
+          this.rows = rowsOf(m.value);
           this.sessions = this.rows.filter((r) => r.driven === true);
         }
         cx.notify();

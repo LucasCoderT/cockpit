@@ -198,6 +198,12 @@ hub's watchdog.
   followed terminal's address, a pane by the machine of the space it is in, else by the hub that has a view of its name.
   `hub.subscribe(cx, {…, hub})`, `hub.view(name, args, hub)` and `hub.act(app, action, args, cx, hub)` name one outright
   (null: the window's own).
+- **Cockpit Chat** reads each session from its own hub: the chat, its queue and a driven session's pages go to the hub
+  of the subject's machine (`extra.hubOf`: the hub that lists the handle, else the machine of its terminal), and so do
+  the actions a session's handle leads (`agents`, `queue`, `session`, `review`, `show`). A runner is asked by its own
+  addresses (`hub.runnerArgs`: `studio/t4` is `t4` there; a driven session's key is the same on both ends). A new
+  session starts on the machine of the space in front; Start work follows the machine switch, its plan asked on a
+  runner through herdr-core (`cockpit hub fetch start_work`); "Open in a terminal" shows for sessions of this machine.
 - **Notifications** come from every hub (the sidebar's subscription), each posted through its own install; a runner's
   window commands are run in this window, answered to that runner's hub.
 - **Usage limits** are an account's, not a machine's: readings of one agent's window whose resets agree (within

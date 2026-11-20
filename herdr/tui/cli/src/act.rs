@@ -84,6 +84,25 @@ fn runner_act(args: &[String]) -> Result<Value, String> {
     Ok(answer)
 }
 
+const FETCH_USAGE: &str = "cockpit hub fetch <kind> <JSON arguments>";
+
+/// What a remote desk asks that a hub off loopback answers only on its unix socket (Start work's plan, which reads the
+/// checkouts and asks the tracker): the complete JSON answer.
+pub fn hub_fetch(args: &[String]) {
+    let [kind, given] = args else { crate::proc::fail(FETCH_USAGE) };
+    if kind != "start_work" {
+        crate::proc::fail(&format!("cockpit hub fetch answers start_work only; {kind} is read over the desk's connection"));
+    }
+    let Ok(parsed) = serde_json::from_str::<Value>(given) else { crate::proc::fail(&format!("{kind} takes a JSON object of arguments")) };
+    match cockpit_core::hub::request_raw(
+        &json!({"op": "fetch", "kind": kind, "args": parsed, "frontend": cockpit_core::frontend::current().name()}),
+        Duration::from_secs(120),
+    ) {
+        Ok(answer) => println!("{answer}"),
+        Err(message) => crate::proc::fail(&message),
+    }
+}
+
 fn check_runner_args(app: &str, action: &str, args: &[Value]) -> Result<(), String> {
     if app == "review" && action == "send" {
         let fits = matches!(args, [terminal, review] if terminal.as_str().is_some_and(|t| !t.is_empty() && t.chars().all(|c| c.is_ascii_alphanumeric())) && review["comments"].is_array());

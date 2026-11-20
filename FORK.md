@@ -26,7 +26,7 @@ Claude Code sessions that run on others (runners), with cockpit's hub on each ru
   lists this machine's cockpit and other runners (`desk.sh desk <runner> --with-local --local-name <name> --runner <other>`). Every hub's
   agents in one list, each acted on at its own hub; the apps behind a machine switch in the sidebar
   (`cockpit.hub:<name>`); each session's `show` panes from its own hub; notifications, window commands and usage
-  limits from every hub.
+  limits from every hub. Cockpit Chat reads and acts on each session at its own hub, a runner's by its own addresses.
 - **`cockpit app install` keeps a remote desk's `cockpit.json`**, so updates no longer turn the desk back into a local
   install.
 - Install, update and release links point at this fork; its releases are its own.

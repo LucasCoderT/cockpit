@@ -7,6 +7,7 @@ must be here first.
 
 ## Unreleased
 
+- Fork: Cockpit Chat on a remote desk and across hubs: a runner's sessions are read by their own addresses (the chat of a runner's agent was empty), each session's chat, queue and actions go to its own hub, driven sessions keep their key, a new session starts on the machine in front, and Start work's plan reaches a runner through `cockpit hub fetch`
 - Fork: several hubs in one window (upstream #51): cockpit.json's `extra` lists this machine's cockpit and other runners; every hub's agents in one list, acted on at their own hub; the apps behind a machine switch (`cockpit.hub:<name>`); each session's show panes from its own hub; notifications, window commands and usage limits from every hub (`desk.sh desk <runner> --with-local --runner <other>`)
 - Fork: on a remote desk, cockpit doctor checks the mod's binary on the runner and leaves other machines' sessions to their own doctor
 - Fork: a runner's config can say `"hubForward": "<ip>"`: the hub listens on loopback at `hubPort` (47821) for `tailscale serve` to forward, past the macOS firewall that holds an unsigned binary's incoming connections after every update

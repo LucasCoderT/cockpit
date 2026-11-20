@@ -124,6 +124,8 @@ let installed = null;
 
 /** The machine of a remote desk, as the last read of the install says; null on this machine or before any read. */
 export const remoteMachine = () => installed?.value?.machine ?? null;
+/** The install as last read (cockpit.json), or null before any read: for what cannot wait on a read. */
+export const installedNow = () => installed?.value ?? null;
 export async function install() {
   if (installed && Date.now() - installed.at < 3000) return installed.value;
   const text = await readTextFile(`${appHome()}/cockpit.json`);
@@ -417,6 +419,28 @@ export async function runnerAct(inst, fields) {
   return JSON.parse(r.stdout);
 }
 
+/**
+ * Arguments as a runner reads them: a terminal at the desk's address (`studio/t4`) at the runner's own (`t4`). One
+ * already the runner's stays; one of another machine is left for the hub to say it does not know it.
+ */
+export function runnerArgs(args, machine) {
+  try {
+    return argsToRunner(args, machine, "runner");
+  } catch {
+    return args;
+  }
+}
+
+/** A subscription's views as a runner reads them (`runnerArgs` on each view's arguments). */
+export const runnerViews = (views = [], machine) => views.map((v) => (v && typeof v === "object" && v.args ? { ...v, args: runnerArgs(v.args, machine) } : v));
+
+/** Start work's plan on a runner, asked on its unix socket through herdr-core: its TCP side refuses it. */
+export async function runnerFetch(inst, fields) {
+  const r = await cockpitOn(inst, ["hub", "fetch", fields.kind, JSON.stringify(runnerArgs(fields.args ?? {}, inst.machine))]);
+  if (r.code !== 0) throw new Error(r.stderr.trim() || `${fields.kind} failed on ${inst.machine}`);
+  return JSON.parse(r.stdout);
+}
+
 /** The desk's clipboard, for a runner's paste (macOS); undefined elsewhere. */
 export function desktopClipboard(cx) {
   return win()?.platform === "macos" ? {
@@ -456,7 +480,9 @@ export async function request(op, fields = {}, cx = null) {
   if (machine) {
     if (op === "go") return focusHere(fields.target);
     if (op === "act") return runnerAct(await install(), fields);
+    if (op === "fetch" && fields.kind === "start_work") return runnerFetch(await install(), fields);
     if (!REMOTE_READS.has(op)) throw new Error(READ_ONLY);
+    fields = { ...fields, ...(fields.args !== undefined ? { args: runnerArgs(fields.args, machine) } : {}) };
   }
   const connecting = connect(null, cx);
   let connection;
@@ -702,7 +728,9 @@ function followHub(cx, { views = [], docs = [], notify = false, focus = null, wi
             if (typeof secret !== "string" || !secret) throw new Error("the hub sent no window secret");
             if (!current()) break;
           }
-          await socket.write(JSON.stringify({ op: "subscribe", token, views, docs, notify, keepalive: KEEPALIVE_SECS, ...(secret ? { window: true, window_secret: secret } : {}) }) + "\n");
+          // A runner knows its terminals by their own addresses (`t4`), the window by the desk's (`studio/t4`).
+          const asked = remote ? runnerViews(views, remote) : views;
+          await socket.write(JSON.stringify({ op: "subscribe", token, views: asked, docs, notify, keepalive: KEEPALIVE_SECS, ...(secret ? { window: true, window_secret: secret } : {}) }) + "\n");
           let wrote = Date.now();
           state.connecting = false;
           state.answered = true;
@@ -817,4 +845,4 @@ async function windowReply(id, secret, capability, outcome) {
   } finally { close(socket); }
 }
 
-extra.configure({ load: LOAD, net, install, Lines, sleep, within, cockpitOn, runnerAct, runWindowCommand, herdrApp, focusHere, desktopClipboard, reads: REMOTE_READS });
+extra.configure({ load: LOAD, net, install, Lines, sleep, within, cockpitOn, runnerAct, runnerArgs, runnerViews, runnerFetch, runWindowCommand, herdrApp, focusHere, desktopClipboard, reads: REMOTE_READS });

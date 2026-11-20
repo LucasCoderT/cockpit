@@ -9,6 +9,7 @@ import * as base from "gpui-base";
 const ScrollHandle = base.ScrollHandle ?? null;
 import { focused, run, exec, notify, shared, setShared, appHome, window as win } from "herdr";
 import * as hub from "./hub.js";
+import * as extra from "./extra.js";
 import { take, testKeys } from "./person.js";
 import { openUrl } from "./hub.js";
 import { openPanel } from "./status.js";
@@ -696,9 +697,11 @@ export default class Chat {
     const views = [{ name: "chat", args: { terminal: subject, frontend: "app", limit: this.limit } }, "queue"];
     this.watchedDriven = this.driven(subject);
     if (this.watchedDriven) views.push({ name: "session", args: { key: subject } });
+    // A session of another hub (this machine's, another runner's: extra.js) is read there, its queue with it.
+    const at = extra.hubOf(subject, hub.installedNow?.() ?? null);
     this.chat = hub.subscribe(
       cx,
-      { views },
+      { views, ...(at ? { hub: at } : {}) },
       (m, cx) => {
         if (this.watchGeneration !== generation) return;
         if (m.view === "chat") {
@@ -735,6 +738,16 @@ export default class Chat {
     if (!handle || said === this.reviewed || this.front === false) return;
     this.reviewed = said;
     followInReview(handle, cwd);
+  }
+
+  /**
+   * Whether the subject runs on a runner, whose hub cannot open a terminal in this window: a remote desk's own sessions
+   * and another runner's, not this machine's (extra.js).
+   */
+  onRunner() {
+    const at = extra.hubOf(this.subjectHandle?.() ?? this.target ?? "", hub.installedNow?.() ?? null);
+    if (at) return Boolean(extra.extrasNow().find((e) => e.name === at)?.machine);
+    return Boolean(hub.remoteMachine());
   }
 
   /** The subject's handle, as the hub's actions take it: `app:t3`, or a driven session's key. */
@@ -1576,7 +1589,7 @@ export default class Chat {
     const ciMark = ci === "fail" ? Icon("x", { size: 11 }) : ci === "pass" ? div().size(7).rounded(4).bg(k.mutedFg) : div().size(7).rounded(4).border_1().border_color(k.mutedFg);
     // Narrow, the header's buttons keep their icon and say the rest on hover.
     const narrow = (this.width ?? 1000) < 820;
-    const remote = Boolean(hub.remoteMachine());
+    const remote = this.onRunner();
     const sep = () => div().flex_none().text_color(k.dim).child("·");
     return h_flex()
       .id("chat-head")
@@ -1733,7 +1746,7 @@ export default class Chat {
    */
   handover(cx, sure = false) {
     const live = this.session();
-    if (!live || hub.remoteMachine()) return;
+    if (!live || this.onRunner()) return;
     if (!sure) {
       this.handing = { key: live.key };
       return cx.notify();

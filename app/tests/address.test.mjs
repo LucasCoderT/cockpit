@@ -31,3 +31,10 @@ test('desktop terminal addresses without a machine cannot become runner addresse
   assert.throws(()=>argsToRunner([{terminal:address}],'runner'),/not on runner/);
  }
 });
+
+test("a driven session's key and a herdr pane id cross to the runner as they are", async () => {
+  const { toRunner, argsToRunner } = await import(new URL("../mods/cockpit/address.js", import.meta.url));
+  assert.equal(toRunner("claude:1794-0", "runner"), "claude:1794-0");
+  assert.equal(toRunner("app:w9:p1", "runner"), "app:w9:p1");
+  assert.deepEqual(argsToRunner([{ key: "claude:1794-0", terminal: "claude:1794-0" }, { terminal: "app:runner/t4" }], "runner"), [{ key: "claude:1794-0", terminal: "claude:1794-0" }, { terminal: "app:t4" }]);
+});

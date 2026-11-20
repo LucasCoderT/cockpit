@@ -15,7 +15,7 @@ async function load() {
   }, { context }));
   await module.evaluate();
   const extra = module.namespace;
-  extra.configure({ net: { connect: async () => { throw new Error("no network in this test"); } }, install: async () => ({ extra: [] }), Lines: class {}, sleep: async () => {}, within: (_cx, p) => p });
+  extra.configure({ install: async () => ({ machine: "studio", extra: [{ name: "macbook", cache: "/c" }] }), net: { connect: async () => { throw new Error("no network in this test"); } }, Lines: class {}, sleep: async () => {}, within: (_cx, p) => p });
   return { extra, context };
 }
 
@@ -99,4 +99,20 @@ test("a subscription's limits show once, by the freshest reading; another accoun
   // Another account: its week resets days apart, so both show, the other under its machine; a new agent as it is.
   const box = [{ name: "box", quota: [{ agent: "claude", provider: "Claude", name: "7d", label: "Claude 7d", percent: 12, resets_at: 1_000_000_000 + 3 * 86_400_000, machine: "box" }, { agent: "codex", provider: "OpenAI", name: "5h", percent: 3, machine: "box" }] }];
   assert.deepEqual(JSON.parse(JSON.stringify(extra.mergeQuota(own, box).map((q) => q.label ?? q.name))), ["Claude 7d", "Claude 7d · box", "5h"]);
+});
+
+test("a session's chat, queue and actions go to the hub of its machine", async () => {
+  const { extra } = await load();
+  await extra.extras();
+  // This machine's session (`t5`) is the macbook hub's; the runner's own (`studio/t4`) the window's; an app follows the pick.
+  assert.equal(await extra.targetOf("act", { app: "queue", action: "tell", args: ["app:t5", "hello"] }), "macbook");
+  assert.equal(await extra.targetOf("act", { app: "agents", action: "answer", args: [{ terminal: "app:studio/t4" }] }), null);
+  assert.equal(await extra.targetOf("view", { name: "chat", args: { terminal: "t5", frontend: "app" } }), "macbook");
+  assert.equal(await extra.targetOf("view", { name: "chat", args: { terminal: "studio/t4" } }), null);
+  // A driven session (a key, not a terminal) is the hub's that lists it.
+  extra.adopt({ name: "macbook", cache: "/c" }, { agents: [{ terminal: "claude:1794-0", driven: true }] });
+  assert.equal(extra.hubOf("claude:1794-0", { machine: "studio" }), "macbook");
+  assert.equal(await extra.targetOf("act", { app: "session", action: "send", args: [{ key: "claude:1794-0", text: "hi" }] }), "macbook");
+  assert.equal(extra.hubOf("claude:9-9", { machine: "studio" }), null, "one no extra hub lists is the window's own");
+  assert.equal(await extra.targetOf("view", { name: "inbox", args: {} }), null, "the apps follow the pick, none made");
 });

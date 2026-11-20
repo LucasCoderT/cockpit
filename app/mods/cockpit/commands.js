@@ -491,7 +491,9 @@ function startSession(cx, person) {
   if (!person) return openMenu([{ label: `Start a session in ${cwd.split("/").pop() || cwd}`, icon: "bot", command: "session" }], { width: 280, clickOnly: true });
   cx.spawn(async (cx) => {
     // The first agent of the table cockpit can drive: the hub picks it.
-    const r = await hub.act("session", "start", [{ cwd, mode: "default" }]).catch((e) => ({ error: String(e?.message ?? e) }));
+    // On the machine of the space in front: a runner's folder is its own (extra.js names the hub, null the window's).
+    const at = extra.targetForMachine(here?.machine ?? null, hub.installedNow?.() ?? {});
+    const r = await hub.act("session", "start", [{ cwd, mode: "default" }], null, at).catch((e) => ({ error: String(e?.message ?? e) }));
     said(r, "Could not start it");
     const key = /^started (\S+)/.exec(r?.note ?? "")?.[1];
     if (key) handOn("chat", `chat:open:${key}`, cx, true);

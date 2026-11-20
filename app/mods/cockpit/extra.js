@@ -30,8 +30,10 @@ const START_EVERY_MS = 30_000;
 /** Where the window keeps the machine its apps read (shared, so every copy and a restart see it). */
 export const PICK_KEY = "cockpit.hub";
 /** The views and documents that follow the picked machine, and the apps whose actions do. */
-export const APP_VIEWS = new Set(["inbox", "todo", "runbook", "meetings", "mail", "monitor", "routines", "home", "routines-when", "monitor-window"]);
-export const APP_ACTS = new Set(["inbox", "todo", "runbook", "meetings", "mail", "monitor", "routines", "home"]);
+export const APP_VIEWS = new Set(["inbox", "todo", "runbook", "meetings", "mail", "monitor", "routines", "home", "routines-when", "monitor-window", "start"]);
+export const APP_ACTS = new Set(["inbox", "todo", "runbook", "meetings", "mail", "monitor", "routines", "home", "start"]);
+/** The actions whose first argument names the session they are about: they go to that session's hub. */
+const SESSION_ACTS = new Set(["agents", "queue", "session", "review", "show"]);
 
 const state = () => (globalThis.cockpitExtraHubs ??= { followers: new Map(), version: 0, list: null });
 
@@ -87,10 +89,37 @@ export function targetForAddress(address, primary, list = extrasNow()) {
   return targetForMachine(at > 0 ? a.slice(0, at) : null, primary, list);
 }
 
-/** Where a request goes: the hub named (`hub`), the hub that lists the agent acted on, the picked machine for an app. */
+/**
+ * The hub a session's handle belongs to: the one that lists it (a driven session's key too), else the hub of the
+ * machine its terminal is on; null for the window's own.
+ */
+export function hubOf(handle, primary) {
+  if (typeof handle !== "string" || !handle) return null;
+  const owner = owners().get(handle) ?? owners().get(handle.startsWith("app:") ? handle : `app:${handle}`);
+  if (owner) return owner.name;
+  return handle.startsWith("app:") || /^[^:]*\/?t\d+$/.test(handle) ? targetForAddress(handle, primary) : null;
+}
+
+/** The session a request is about, by its handle: an action's first argument, a view's or fetch's `terminal`. */
+function sessionOf(op, fields) {
+  if (op === "act" && SESSION_ACTS.has(fields.app)) {
+    const first = fields.args?.[0];
+    return typeof first === "string" ? first : first?.terminal ?? first?.key ?? null;
+  }
+  if (op === "view" || op === "fetch" || op === "history") return fields.args?.terminal ?? fields.args?.key ?? null;
+  return null;
+}
+
+/** Where a request goes: the hub named (`hub`), the hub of the session it is about, the picked machine for an app. */
 export async function targetOf(op, fields, named) {
   if (named !== undefined) return named && byName(named) ? named : named ? missing(named) : null;
   const list = extrasNow().length ? extrasNow() : await extras().catch(() => []);
+  if (!list.length) return null;
+  const session = sessionOf(op, fields);
+  if (session) {
+    const at = hubOf(session, await deps.install());
+    if (at) return at;
+  }
   const p = picked(list);
   if (!p) return null;
   if (op === "act" && APP_ACTS.has(fields.app)) return p;
@@ -159,7 +188,9 @@ export async function requestAt(name, op, fields = {}, cx = null) {
   if (inst.machine) {
     if (op === "go") return deps.focusHere(fields.target);
     if (op === "act") return deps.runnerAct(inst, fields);
+    if (op === "fetch" && fields.kind === "start_work") return deps.runnerFetch(inst, fields);
     if (!deps.reads?.has(op)) throw new Error(`${op} is not something ${inst.name}'s hub takes from this window`);
+    if (fields.args !== undefined) fields = { ...fields, args: deps.runnerArgs(fields.args, inst.machine) };
   }
   return ask(inst, { op, ...fields }, cx);
 }
@@ -214,7 +245,8 @@ function followAt(inst, cx, opts, onMessage, onState, wanted) {
           if (r.code !== 0) throw new Error(r.stderr?.trim() || `could not get ${inst.name}'s window secret`);
           secret = JSON.parse(r.stdout).secret;
         }
-        await own.write(JSON.stringify({ op: "subscribe", token: c.token, views: opts.views ?? [], docs: opts.docs ?? [], notify: Boolean(opts.notify), keepalive: KEEPALIVE_SECS, ...(secret ? { window: true, window_secret: secret } : {}) }) + "\n");
+        const views = inst.machine ? deps.runnerViews(opts.views ?? [], inst.machine) : opts.views ?? [];
+        await own.write(JSON.stringify({ op: "subscribe", token: c.token, views, docs: opts.docs ?? [], notify: Boolean(opts.notify), keepalive: KEEPALIVE_SECS, ...(secret ? { window: true, window_secret: secret } : {}) }) + "\n");
         let wrote = Date.now();
         wait = 500;
         onState("live", cx);

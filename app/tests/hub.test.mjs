@@ -142,6 +142,12 @@ test("an act on an extra hub's agent goes to that hub, never to the runner", asy
   assert.equal(f.calls.filter(c => c[0] === "exec").length, 0, "the runner is not asked");
 });
 
+test("a remote desk asks the runner about its sessions by the runner's own addresses", async t => {
+  const f = await fixture(t);
+  const views = f.hub.runnerViews([{ name: "chat", args: { terminal: "runner/t4", frontend: "app" } }, "queue", { name: "session", args: { key: "claude:1-0" } }, { name: "chat", args: { terminal: "t5" } }], "runner");
+  assert.deepEqual(JSON.parse(JSON.stringify(views)), [{ name: "chat", args: { terminal: "t4", frontend: "app" } }, "queue", { name: "session", args: { key: "claude:1-0" } }, { name: "chat", args: { terminal: "t5" } }]);
+});
+
 test("a remote act translates terminal handles and armed", async t => {
   const f = await fixture(t);
   await f.hub.request("act", { app:"agents", action:"seen", args:[{terminal:"app:runner/t7"}], armed:"delete-notes" });
