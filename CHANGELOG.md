@@ -5,7 +5,7 @@ Each version is tagged `v<version>` and has a GitHub release with these notes, b
 plugin, share the version with the apps (`herdr/tui/Cargo.toml`), whose binaries the release builds; the section for it
 must be here first.
 
-## Unreleased
+## 1.2.1 (2026-11-20)
 
 - Fork: the two-way remote desk from creatorofuniverses/cockpit: every app action reaches the runner through herdr-core, and a runner's show panes and window calls are relayed to the desk
 - Fork: `"window": "desk"` in a runner's config sends its window calls to the desk even where it has a Herdr app
