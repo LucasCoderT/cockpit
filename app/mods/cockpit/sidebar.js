@@ -6,6 +6,7 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { run, shared, setShared, focused, spaces, agents, machines, hc, panes, terminals, setAgentOrder, notify, openOverlay, window as win, readTextFile, exec } from "herdr";
 import * as hub from "./hub.js";
+import * as extra from "./extra.js";
 import { followBrowser } from "./web.js";
 import { deliver } from "./notify.js";
 import { rowsOf, countsOf, agentStatus, needing } from "./fleet.js";
@@ -125,7 +126,8 @@ export default class Sidebar {
     const views = Object.entries(BADGE_FIELDS).map(([name, pick]) => ({ name, pick }));
     this.sub = hub.subscribe(cx, { views, notify: true, window: true }, (m, cx) => {
       if (m.view) this.counts[m.view] = appBadge(m.view, m.value);
-      if (m.notify) this.toast(m.notify, cx);
+      // Another hub's (extra.js) carries its install: posted as that hub's, on the machine it runs on.
+      if (m.notify) this.toast(m.notify, cx, m.hub);
       cx.notify();
     });
   }
@@ -138,8 +140,8 @@ export default class Sidebar {
   }
 
   /** A hub notification, as notify.js shows it: Herdr's toast in front, the system's behind. */
-  toast(n, cx) {
-    deliver(n, this.install, cx);
+  toast(n, cx, from = null) {
+    deliver(n, from ?? this.install, cx);
   }
 
   /** The agents menu's `cockpit.agents|…`, unless a screen in front runs them; the window's are the runner's. */
@@ -301,6 +303,7 @@ export default class Sidebar {
           .children(lead.map((a) => navItem(a.child, a.label, a.icon, a.count, a.command, a.tone)))
           .children(apps.map((a) => navItem(a.child, a.label, a.icon, badge(a.child)?.count || null, a.command, tone(a.child)))),
       )
+      .when(!rail && extra.extrasNow().length > 0, (e) => e.child(this.hubSwitch(k)))
       .when(!rail, (e) =>
         e.child(
           this.appStrip(k, active, [...lead, ...apps.map((a) => ({ ...a, count: badge(a.child)?.count || null, tone: tone(a.child) }))]),
@@ -319,6 +322,49 @@ export default class Sidebar {
       )
       .when(Boolean(this.update), (e) => e.child(UpdateTag("update-tag", this.update, { rail, mono: layoutName() === "cockpit-chat" })))
       .child(div().mt(4).child(SettingsLink("sidebar-settings", { rail })));
+  }
+
+  /**
+   * Which machine the apps read (inbox, to-do, runbook, meetings, mail, monitor, routines, Home's PRs), when cockpit.json
+   * names other hubs (extra.js): the window's own hub first. The agents list shows every machine whatever is picked.
+   */
+  hubSwitch(k) {
+    const list = extra.extrasNow();
+    const picked = extra.picked(list);
+    const own = this.install?.machine ?? "This computer";
+    const items = [{ name: null, label: own }, ...list.map((e) => ({ name: e.name, label: e.name }))];
+    return h_flex()
+      .id("hub-switch")
+      .mb(6)
+      .gap(2)
+      .p(3)
+      .rounded(RADIUS.lg)
+      .bg(alpha(k.muted, 0.6))
+      .children(
+        items.map((it, i) => {
+          const on = (picked ?? null) === it.name;
+          return h_flex()
+            .id(`hub-pick-${i}`)
+            .flex_1()
+            .min_w(0)
+            .h(22)
+            .px(6)
+            .items_center()
+            .justify_center()
+            .rounded(RADIUS.md)
+            .cursor_pointer()
+            .text_size(TEXT.xs)
+            .text_color(on ? k.foreground : k.mutedFg)
+            .when(on, (e) => e.bg(k.background).shadow_sm())
+            .when(!on, (e) => e.hover((s) => s.bg(k.accent).text_color(k.foreground)))
+            .tooltip(`Inbox, to-do, runbook and the other apps read ${it.label}`)
+            .on_click((_e, cx) => {
+              extra.pick(it.name);
+              cx.notify();
+            })
+            .child(div().truncate().child(it.label));
+        }),
+      );
   }
 
   /** The pinned apps as a row of tiles (label and key in the tooltip, count as a badge): the list below keeps the room. */

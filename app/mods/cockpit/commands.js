@@ -3,6 +3,7 @@
 
 import { run, shared, setShared, keys, commands, focused, openOverlay, spaces, notify, terminals } from "herdr";
 import * as hub from "./hub.js";
+import * as extra from "./extra.js";
 import { fleet, goToAgent } from "./fleet.js";
 import { show, showWork, screens, screensOf, layoutName, shownLayout, toggleSidebar, nodeOf, agentInView, CHAT_SUBJECT, CHAT_PIN, pinChat } from "./screens.js";
 import { shownScreen } from "./front.js";
@@ -541,6 +542,9 @@ const WINDOW = {
     openPanel(name);
     if (name === "show" && key.length) hub.focusHere({ app: "show", key: key.join(":") });
   },
+  // `hub` / `hub:<name>`: which machine the apps read (extra.js), the window's own hub or one cockpit.json names.
+  hub: () => extra.pick(null),
+  "hub:": (name) => extra.pick(name),
   "doc:": (name, _cx, ctx) => {
     openPanel("show");
     run(ctx.person ? keyed(`cockpit.show:go:${name}`) : `cockpit.show:go:${name}`);
@@ -610,6 +614,7 @@ function argOk(name, arg, layout) {
   if (name === "via:") return arg.includes("|") && hasScreen(layout, arg.slice(0, arg.indexOf("|")));
   if (name === "panel:") return has(PANELS, arg);
   if (name === "panel-open:") return has(PANELS, arg.split(":")[0]);
+  if (name === "hub:") return extra.extrasNow().some((e) => e.name === arg);
   return true;
 }
 

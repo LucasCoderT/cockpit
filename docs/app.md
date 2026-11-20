@@ -178,6 +178,31 @@ over read-only TCP is `window_reply`, authenticated with the window secret and a
 
 Desktop checks: `node --experimental-vm-modules --test app/tests/*.test.mjs`.
 
+## Several hubs in one window (fork)
+
+A window can follow more hubs than its own: `cockpit.json`'s `extra` lists them, this machine's cockpit (when the window
+is a remote desk on a runner) and other runners, each `{name, bin, home, cache}` plus `machine` and `host` for a
+runner's. `scripts/desk.sh desk <runner> --with-local --runner <other>` writes it. `app/mods/cockpit/extra.js` routes
+every subscription and request across them; each extra hub is followed on connections of its own, outside the main
+hub's watchdog.
+
+- **Agents** from every hub share the agents view: `value.extra` carries `[{name, rows, counts, quota}]` and
+  `fleet.rowsOf` / `countsOf` take them in. A hub's own terminals only (bare addresses: a hub sees every machine its
+  window shows), at their desk addresses (`box/t2` for a runner's), counted from those rows. An agents action goes to
+  the hub that lists the row (`extra.owners()`); a runner's through herdr-core, as a remote desk's own.
+- **Apps** (inbox, to-do, runbook, meetings, mail, monitor, routines, Home's `home` view) read one machine at a time:
+  the sidebar's machine switch (`cockpit.hub` / `cockpit.hub:<name>`, kept in shared `"cockpit.hub"`) picks it, and
+  their views, documents, actions and events go there; a pending navigation (a notification's row) waits for the view
+  from that machine.
+- **A session's views** (`show`, the Documents panel) come from the hub of the machine it runs on: the panel by the
+  followed terminal's address, a pane by the machine of the space it is in, else by the hub that has a view of its name.
+  `hub.subscribe(cx, {…, hub})`, `hub.view(name, args, hub)` and `hub.act(app, action, args, cx, hub)` name one outright
+  (null: the window's own).
+- **Notifications** come from every hub (the sidebar's subscription), each posted through its own install; a runner's
+  window commands are run in this window, answered to that runner's hub.
+- **Usage limits** list every hub's: a limit that reads the same on two machines (one account) once, one that differs
+  as `<name> · <machine>`.
+
 ## Window-wide plumbing (`commands.js`)
 
 - Keys (`app/keys.json`, sections `layout:cockpit` and `layout:cockpit-chat`): `cmd-shift-p` → `cockpit.palette`

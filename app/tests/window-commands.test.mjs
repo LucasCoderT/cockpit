@@ -632,7 +632,7 @@ const SHAPES = {
   // The runner's commands (commands.js), both layouts.
   palette: ["palette", "nav"], keys: ["keys", "nav"], recap: ["recap", "nav"], "recap:": ["recap:needs_you", "nav"],
   "next-waiting": ["next-waiting", "nav"], "next:blocked": ["next:blocked", "nav"], "next:done": ["next:done", "nav"],
-  panel: ["panel", "nav"], "panel:": ["panel:review", "nav"], "panel-open:": ["panel-open:show:quota", "nav"], "doc:": ["doc:deploy", "nav"], "go:": ["go:inbox", "nav"],
+  panel: ["panel", "nav"], "panel:": ["panel:review", "nav"], "panel-open:": ["panel-open:show:quota", "nav"], hub: ["hub", "nav"], "hub:": ["hub:laptop", "nav"], "doc:": ["doc:deploy", "nav"], "go:": ["go:inbox", "nav"],
   "via:": ["via:chat|chat:mode", "nav"], pr: ["pr", "nav"], ticket: ["ticket", "nav"],
   resume: ["resume", "allowed"], "link:": ["link:https://acme.example/x", "nav"], "target:": [`target:act:merge:${PR}`, "nav"],
   update: ["update", "nav"], settings: ["settings", "nav"], "settings:": ["settings:health", "nav"], diagnostics: ["diagnostics", "nav"], usage: ["usage", "nav"], start: ["start", "nav"],

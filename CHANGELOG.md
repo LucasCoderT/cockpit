@@ -7,7 +7,8 @@ must be here first.
 
 ## Unreleased
 
-- Fork: one window, two hubs: a remote desk's cockpit.json can list `extra` installs (this machine's cockpit), whose agents join the runner's and are acted on at their own hub (`desk.sh desk <runner> --with-local`)
+- Fork: several hubs in one window (upstream #51): cockpit.json's `extra` lists this machine's cockpit and other runners; every hub's agents in one list, acted on at their own hub; the apps behind a machine switch (`cockpit.hub:<name>`); each session's show panes from its own hub; notifications, window commands and usage limits from every hub (`desk.sh desk <runner> --with-local --runner <other>`)
+- Fork: on a remote desk, cockpit doctor checks the mod's binary on the runner and leaves other machines' sessions to their own doctor
 - Fork: a runner's config can say `"hubForward": "<ip>"`: the hub listens on loopback at `hubPort` (47821) for `tailscale serve` to forward, past the macOS firewall that holds an unsigned binary's incoming connections after every update
 - Fork: `COCKPIT_HUB_LISTEN` reaches the hub again (its login-shell environment dropped it), and a runner's config can say `"hubListen": "<ip>"` so any hub started there listens on its network
 

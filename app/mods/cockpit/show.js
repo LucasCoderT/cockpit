@@ -5,8 +5,9 @@
 
 import { div, image, PathBuilder } from "gpui-kit";
 import { h_flex, v_flex, v_virtual_list, Scrollbar, InputState, Input, TextView } from "gpui-base";
-import { exec, appHome, focused, panes, run, layout, shared, setShared, props, settings, window as win } from "herdr";
+import { exec, appHome, focused, panes, spaces, run, layout, shared, setShared, props, settings, window as win } from "herdr";
 import * as hub from "./hub.js";
+import * as extra from "./extra.js";
 import { toRunner } from "./address.js";
 import { UpdateBadge, panelVisible } from "./updates.js";
 import { take } from "./person.js";
@@ -111,7 +112,11 @@ export default class Show {
     this.machine = undefined;
     this.findingMachine = true;
     cx.spawn(async cx => {
-      this.machine = (await hub.install().catch(()=>({}))).machine ?? null;
+      this.install = await hub.install().catch(() => ({}));
+      this.machine = this.install.machine ?? null;
+      // The hubs cockpit.json names: a session's views come from the hub of the machine it runs on (extra.js).
+      await extra.extras().catch(() => []);
+      if (this.name) await this.findHub(cx);
       this.findingMachine = false;
       this.subscribe(cx);
       cx.notify();
@@ -119,13 +124,17 @@ export default class Show {
     cx.timer.every(1000, (cx) => this.tick(cx));
     if (this.name) {
       // A pane split from the agent's is focused for a moment: that is how this copy learns which pane it is.
-      const learn = () => {
+      const learn = (cx) => {
         const f = focused();
         const mine = f?.pane && panes().find((x) => x.pane === f.pane && x.mod === "cockpit");
-        if (mine && !this.pane) this.pane = f.pane;
+        if (mine && !this.pane) {
+          this.pane = f.pane;
+          // A pane on another machine's space shows a view of that machine's hub.
+          if (cx && !this.findingMachine && this.target() !== this.hubTarget) this.subscribe(cx);
+        }
       };
-      learn();
-      cx.timer.after(150, () => learn());
+      learn(null);
+      cx.timer.after(150, (cx) => learn(cx));
     }
   }
 
@@ -143,8 +152,40 @@ export default class Show {
     }
   }
 
+  /**
+   * The hub this copy's views come from: the panel follows the session in view, a pane the machine of the space it is
+   * in. null is the window's own hub, else an extra hub's name.
+   */
+  target() {
+    const desk = this.install ?? {};
+    if (this.panel) return extra.targetForAddress(this.terminal ?? "", desk);
+    const pane = this.pane && panes().find((p) => p.pane === this.pane);
+    if (!pane) return this.found ?? null;
+    const space = (spaces() ?? []).find((s) => (s.tabs ?? []).some((t) => t.id === pane.tab));
+    return extra.targetForMachine(space?.machine ?? null, desk);
+  }
+
+  /**
+   * A pane whose own place is not known yet (Herdr names a mod pane to it only through focus): the hub that has a view
+   * of its name, the window's own first. Asked again on the clock while the pane waits for its view.
+   */
+  async findHub(cx) {
+    const list = extra.extrasNow();
+    if (!list.length) return;
+    this.probed = Date.now();
+    for (const at of [null, ...list.map((e) => e.name)]) {
+      const value = await hub.view("show", { name: this.name }, at).catch(() => null);
+      if (value?.view) {
+        this.found = at;
+        return;
+      }
+    }
+  }
+
   subscribe(cx) {
     if (this.findingMachine) return;
+    this.hubTarget = this.target();
+    const machine = this.hubTarget ? extra.extrasNow().find((e) => e.name === this.hubTarget)?.machine ?? null : this.machine;
     try {
       if (this.panel) localStorage.setItem("show.pick", this.pick ?? "");
     } catch {}
@@ -153,7 +194,7 @@ export default class Show {
     const subscription = this.subscription = (this.subscription ?? 0) + 1;
     let args;
     try {
-      args = this.name ? { name: this.name } : { terminal: this.terminal ? toRunner(this.terminal, this.machine) : "", pick: this.pick };
+      args = this.name ? { name: this.name } : { terminal: this.terminal ? toRunner(this.terminal, machine) : "", pick: this.pick };
     } catch(error) {
       this.data = null;
       this.pick = null;
@@ -165,7 +206,7 @@ export default class Show {
     }
     this.sub = hub.subscribe(
       cx,
-      { views: [{ name: "show", args }], focus: this.panel ? "show" : null },
+      { views: [{ name: "show", args }], focus: this.panel ? "show" : null, hub: this.hubTarget },
       (m, cx) => {
         if (this.subscription !== subscription) return;
         if (m.view === "show") this.take(m.value, cx);
@@ -240,6 +281,16 @@ export default class Show {
   // Live blocks: a diff read, a log run, a command's rows, each on its own clock while the view is shown
 
   tick(cx) {
+    // A pane still waiting for its view looks for the hub that has it.
+    if (this.name && !this.data?.view && !this.findingMachine && !this.probing && Date.now() - (this.probed ?? 0) > 5000) {
+      this.probing = true;
+      cx.spawn(async (cx) => {
+        const before = this.found ?? null;
+        await this.findHub(cx).catch(() => {});
+        this.probing = false;
+        if ((this.found ?? null) !== before) this.subscribe(cx);
+      });
+    }
     const view = this.view();
     if (!view || !shownInLayout(this.panel ? "show" : "__pane__")) return;
     const now = Date.now();
@@ -258,7 +309,7 @@ export default class Show {
       l.busy = true;
       cx.spawn(async (cx) => {
         try {
-          const data = await hub.view("show-block", { name: view.name, n: b.n, since: l.data?.hash ?? null });
+          const data = await hub.view("show-block", { name: view.name, n: b.n, since: l.data?.hash ?? null }, this.hubTarget ?? null);
           if (!data?.same) {
             l.data = data;
             if (b.type === "diff") this.diff(b).set(data?.error ? null : data);
@@ -326,7 +377,7 @@ export default class Show {
     if (!REPEATED.includes(type)) st.sent = label;
     cx.spawn(async (cx) => {
       try {
-        const r = await hub.act("show", "answer", [view.name, n, type, value, label]);
+        const r = await hub.act("show", "answer", [view.name, n, type, value, label], null, this.hubTarget ?? null);
         if (r.error) {
           st.sent = null;
           this.toasts.push(cx, r.error, { kind: "error" });

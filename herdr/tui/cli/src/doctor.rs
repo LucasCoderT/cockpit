@@ -649,7 +649,17 @@ impl Doctor {
         let noted = load(&home.join("cockpit.json")).unwrap_or(Value::Null);
         let bin = raw(&noted["bin"]);
         let ours = env!("CARGO_PKG_VERSION");
-        if bin.is_empty() || !proc::executable(Path::new(&bin)) {
+        // A remote desk names the runner's binary, on the runner: asked there through herdr-core.
+        let desk = noted["machine"].as_str().filter(|m| !m.trim().is_empty()).map(str::to_string);
+        let runs = match &desk {
+            Some(machine) => {
+                !bin.is_empty() && self.run(&[&cockpit_core::frontend::program("hc", "HC_BIN"), "exec", "--on", machine, "test", "-x", &bin], Duration::from_secs(20)).is_some_and(|o| o.ok())
+            }
+            None => !bin.is_empty() && proc::executable(Path::new(&bin)),
+        };
+        if let Some(machine) = desk.as_deref().filter(|_| runs) {
+            ok("app.layout", &format!("Herdr app: a remote desk on {machine}, cockpit layout and mod {}", raw(&noted["version"])));
+        } else if !runs {
             fail("app.layout", &format!("the cockpit mod names no cockpit binary that runs ({}) → {fix}", if bin.is_empty() { "none" } else { &bin }))
                 .run(fix.clone());
         } else if raw(&noted["version"]) != ours {
@@ -681,6 +691,10 @@ impl Doctor {
             for tab in values(&space["tabs"]) {
                 for terminal in values(&tab["terminals"]) {
                     let address = raw(&terminal["terminal"]);
+                    // Another machine's session checks in with that machine's cockpit: its own doctor looks at it.
+                    if address.contains('/') {
+                        continue;
+                    }
                     let program = cockpit_core::frontend::hc(&["get", &address]).map(|t| raw(&t["foreground"]["name"])).unwrap_or_default();
                     if !program.contains("claude") {
                         continue;

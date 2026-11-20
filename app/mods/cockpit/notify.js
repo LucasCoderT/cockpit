@@ -25,7 +25,9 @@ export function deliver(n, install, cx) {
   }
   const always = remote || install?.env?.COCKPIT_TOASTS === "always";
   if (!win().active && !always) {
-    cx.spawn(async () => hub.cockpit(["notify", "--system", n.title ?? "", n.body ?? "", n.action ?? "", ...(n.buttons ?? [])]));
+    const args = ["notify", "--system", n.title ?? "", n.body ?? "", n.action ?? "", ...(n.buttons ?? [])];
+    // An extra hub's notification (extra.js) goes out through that install's own cockpit.
+    cx.spawn(async () => (install?.bin && install?.name ? hub.cockpitOn(install, args) : hub.cockpit(args)));
     return;
   }
   toast(n);

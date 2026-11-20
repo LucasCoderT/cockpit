@@ -8,10 +8,11 @@
 #                                               calls and notifications go to the desk); its hub listens on loopback at
 #                                               <n> (47821) and `tailscale serve` forwards <ip>:<n> (its Tailscale IPv4)
 #                                               there; --direct listens on <ip> itself instead ("hubListen")
-#   sh scripts/desk.sh desk <machine> [--with-local]
+#   sh scripts/desk.sh desk <machine> [--with-local] [--runner <other>]...
 #                                               on the desktop: this checkout's mod in the Herdr app, and cockpit.json
 #                                               pointing at <machine>'s hub (its paths and address read through
-#                                               herdr-core); --with-local lists this machine's agents beside them
+#                                               herdr-core); --with-local and --runner add this machine's hub and
+#                                               other runners' (app/mods/cockpit/extra.js)
 #
 # Run `build` on each machine first until the fork publishes releases of its own.
 set -eu
@@ -68,31 +69,48 @@ runner() {
   echo "note: a desk's TCP connection reads only; its actions go through herdr-core"
 }
 
-desk() {
-  machine=${1:-}
-  [ -n "$machine" ] || die "usage: desk.sh desk <machine> [--with-local]"
-  with_local=""
-  [ "${2:-}" = "--with-local" ] && with_local=1
-  command -v hc >/dev/null || die "hc (herdr-core) is needed"
-  command -v jq >/dev/null || die "jq is needed"
-  # The runner's home, its cockpit binary (the link on PATH resolved) and the address its hub.json gives.
-  info=$(hc exec --on "$machine" sh -lc 'echo "$HOME"; b=$(command -v cockpit); readlink -f "$b" 2>/dev/null || echo "$b"; cat "$HOME/.cache/cockpit/hub.json"') ||
-    die "could not reach $machine through herdr-core"
+# A runner's install as cockpit.json names it: its home, its cockpit binary (the link on PATH resolved) and the address
+# its hub.json gives desks, read through herdr-core.
+runner_install() {
+  m=$1
+  info=$(hc exec --on "$m" sh -lc 'echo "$HOME"; b=$(command -v cockpit); readlink -f "$b" 2>/dev/null || echo "$b"; cat "$HOME/.cache/cockpit/hub.json"') ||
+    die "could not reach $m through herdr-core"
   home=$(printf '%s\n' "$info" | sed -n 1p)
   bin=$(printf '%s\n' "$info" | sed -n 2p)
   host=$(printf '%s\n' "$info" | sed -n '3,$p' | jq -r .host)
-  case "$host" in "" | null | 127.* | ::1) die "$machine's hub listens on loopback only: run desk.sh runner there first" ;; esac
+  case "$host" in "" | null | 127.* | ::1) die "the hub of $m listens on loopback only: run desk.sh runner there first" ;; esac
+  jq -n --arg m "$m" --arg h "$host" --arg b "$bin" --arg home "$home" '{name: $m, machine: $m, host: $h, bin: $b, home: $home, cache: ($home + "/.cache/cockpit")}'
+}
+
+desk() {
+  machine=${1:-}
+  [ -n "$machine" ] || die "usage: desk.sh desk <machine> [--with-local] [--runner <machine>]..."
+  shift
+  command -v hc >/dev/null || die "hc (herdr-core) is needed"
+  command -v jq >/dev/null || die "jq is needed"
+  extra='[]'
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --with-local)
+        # This machine's own cockpit too: its agents join the runner's in the window (app/mods/cockpit/extra.js).
+        local_bin=$(readlink -f "$HOME/.config/cockpit/herdr/bin/cockpit" 2>/dev/null || echo "$HOME/.config/cockpit/herdr/bin/cockpit")
+        extra=$(printf '%s' "$extra" | jq --arg n "$(hostname -s)" --arg b "$local_bin" --arg home "$HOME" '. + [{name: $n, bin: $b, home: $home, cache: ($home + "/.cache/cockpit")}]')
+        ;;
+      --runner)
+        [ -n "${2:-}" ] || die "--runner needs a machine"
+        extra=$(printf '%s' "$extra" | jq --argjson r "$(runner_install "$2")" '. + [$r]')
+        shift
+        ;;
+      *) die "unknown option $1" ;;
+    esac
+    shift
+  done
+  primary=$(runner_install "$machine")
   app_home=${HERDR_APP_HOME:-$HOME/.config/herdr-app}
   cockpit app install --from "$PWD/app"
-  extra='[]'
-  if [ -n "$with_local" ]; then
-    # This machine's own cockpit too: its agents join the runner's in the window (app/mods/cockpit/extra.js).
-    local_bin=$(readlink -f "$HOME/.config/cockpit/herdr/bin/cockpit" 2>/dev/null || echo "$HOME/.config/cockpit/herdr/bin/cockpit")
-    extra=$(jq -n --arg n "$(hostname -s)" --arg b "$local_bin" --arg home "$HOME" '[{name: $n, bin: $b, home: $home, cache: ($home + "/.cache/cockpit")}]')
-  fi
-  jq -n --arg m "$machine" --arg h "$host" --arg b "$bin" --arg home "$home" --arg v "$(jq -r .version plugin/.claude-plugin/plugin.json)" --argjson extra "$extra" \
-    '{machine: $m, host: $h, bin: $b, home: $home, cache: ($home + "/.cache/cockpit"), version: $v} + (if ($extra | length) > 0 then {extra: $extra} else {} end)' >"$app_home/cockpit.json"
-  echo "the Herdr app now reads the hub of $machine at $host${with_local:+, and the one of this machine}"
+  printf '%s' "$primary" | jq --arg v "$(jq -r .version plugin/.claude-plugin/plugin.json)" --argjson extra "$extra" \
+    'del(.name) + {version: $v} + (if ($extra | length) > 0 then {extra: $extra} else {} end)' >"$app_home/cockpit.json"
+  echo "the Herdr app now reads the hub of $machine at $(printf '%s' "$primary" | jq -r .host), and $(printf '%s' "$extra" | jq length) more"
 }
 
 case "${1:-}" in

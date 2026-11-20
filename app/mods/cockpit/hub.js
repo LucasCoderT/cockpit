@@ -377,7 +377,6 @@ async function connect(state, cx) {
 /** Runs the cockpit binary on the install's HOME, driving this Herdr window: { code, stdout, stderr }. */
 export async function cockpit(args) {
   const { bin, home, env = {}, machine, host } = await install();
-  const vars = Object.entries(env).filter(([k]) => !machine || k !== "HERDR_APP_HOME").map(([k, v]) => `${k}=${v}`);
   if (machine) {
     if (args[0] === "focus" && args.length === 2) {
       const target = args[1].replace(/^herdr-app:/, "");
@@ -395,9 +394,43 @@ export async function cockpit(args) {
         : { app: { meeting: "meetings", routine: "routines" }[app] ?? app, key });
       return { code: 0, stdout: "", stderr: "" };
     }
-    return exec("env", [...vars, `HOME=${home}`, `COCKPIT_HUB_LISTEN=${host}`, "COCKPIT_FRONTEND=app", bin, ...args], { on: machine });
   }
+  return cockpitOn({ bin, home, env, machine, host }, args);
+}
+
+/** Runs the cockpit binary of one install (this window's, or an extra hub's: extra.js) on its own machine and HOME. */
+export function cockpitOn({ bin, home, env = {}, machine, host }, args) {
+  const vars = Object.entries(env).filter(([k]) => !machine || k !== "HERDR_APP_HOME").map(([k, v]) => `${k}=${v}`);
+  if (machine) return exec("env", [...vars, `HOME=${home}`, ...(host ? [`COCKPIT_HUB_LISTEN=${host}`] : []), "COCKPIT_FRONTEND=app", bin, ...args], { on: machine });
   return exec("env", [`HOME=${home}`, `HERDR_APP_HOME=${appHome()}`, "COCKPIT_FRONTEND=app", ...vars, bin, ...args]);
+}
+
+/** An app action on a runner, through herdr-core's connection to it (its hub's TCP side reads only). */
+export async function runnerAct(inst, fields) {
+  const { machine } = inst;
+  const args = argsToRunner(fields.args ?? [], machine);
+  if ((fields.app === "review" && fields.action === "send") || fields.app === "queue") {
+    if (typeof args[0] === "string") args[0] = toRunner(args[0], machine);
+  }
+  const r = await cockpitOn(inst, ["hub", "act", fields.app, fields.action, JSON.stringify(args), ...(fields.armed ? ["--armed", fields.armed] : [])]);
+  if (r.code !== 0) throw new Error(r.stderr.trim() || `${fields.app} ${fields.action} failed on ${machine}`);
+  return JSON.parse(r.stdout);
+}
+
+/** The desk's clipboard, for a runner's paste (macOS); undefined elsewhere. */
+export function desktopClipboard(cx) {
+  return win()?.platform === "macos" ? {
+    wait: () => sleep(cx, 800),
+    read: async () => {
+      const r = await exec("pbpaste", []);
+      if (r.code !== 0) throw new Error("could not read the desktop clipboard");
+      return r.stdout;
+    },
+    write: async (text) => {
+      const r = await exec("sh", ["-c", 'printf %s "$1" | pbcopy', "sh", text]);
+      if (r.code !== 0) throw new Error("could not write the desktop clipboard");
+    },
+  } : undefined;
 }
 
 /**
@@ -412,21 +445,17 @@ export async function request(op, fields = {}, cx = null) {
     return r.code === 0 ? { note: `opened ${url}`, pending: {}, refreshing: {} } : { error: r.stderr.trim() || `could not open ${url}`, pending: {} };
   }
   sign();
-  // An agent of an extra hub (extra.js) is acted on there.
-  const owner = op === "act" && fields.app === "agents" ? extra.owners().get(fields.args?.[0]?.terminal) : null;
+  // Another hub's (extra.js): an agent it lists, an app read on the machine the window picked, or a hub named outright.
+  const { hub: named, ...asked } = fields;
+  fields = asked;
+  const owner = named === undefined && op === "act" && fields.app === "agents" ? extra.owners().get(fields.args?.[0]?.terminal) : null;
   if (owner) return owner.request(op, fields, cx);
+  const target = await extra.targetOf(op, fields, named);
+  if (target) return extra.requestAt(target, op, fields, cx);
   const { machine } = await install();
   if (machine) {
     if (op === "go") return focusHere(fields.target);
-    if (op === "act") {
-      const args = argsToRunner(fields.args ?? [], machine);
-      if ((fields.app === "review" && fields.action === "send") || fields.app === "queue") {
-        if (typeof args[0] === "string") args[0] = toRunner(args[0],machine);
-      }
-      const r = await cockpit(["hub", "act", fields.app, fields.action, JSON.stringify(args), ...(fields.armed ? ["--armed", fields.armed] : [])]);
-      if (r.code !== 0) throw new Error(r.stderr.trim() || `${fields.app} ${fields.action} failed on ${machine}`);
-      return JSON.parse(r.stdout);
-    }
+    if (op === "act") return runnerAct(await install(), fields);
     if (!REMOTE_READS.has(op)) throw new Error(READ_ONLY);
   }
   const connecting = connect(null, cx);
@@ -463,10 +492,10 @@ export async function request(op, fields = {}, cx = null) {
 export const isUnconfirmed = (e) => Boolean(e?.unconfirmed);
 
 /** An app's action: { note, pending, refreshing, error }; bounded on `cx`'s timer when one is given. */
-export const act = (app, action, args = [], cx = null) => request("act", { app, action, args }, cx);
+export const act = (app, action, args = [], cx = null, hub = undefined) => request("act", { app, action, args, ...(hub !== undefined ? { hub } : {}) }, cx);
 
 /** A view model once. */
-export const view = async (name, args = null) => (await request("view", { name, args })).value;
+export const view = async (name, args = null, hub = undefined) => (await request("view", { name, args, ...(hub !== undefined ? { hub } : {}) })).value;
 
 /** The palette's search across apps. */
 export const search = async (query) => (await request("search", { query })).entries ?? [];
@@ -618,8 +647,9 @@ function beatFor(cx, state, tick) {
  *   subscribe(cx, { views: ["todo"] }, (m, cx) => { this.model = m.value; cx.notify(); });
  */
 export function subscribe(cx, opts, onMessage, onState = () => {}) {
-  // The agents view also lists what the extra hubs cockpit.json names (extra.js).
-  return extra.readsAgents(opts?.views) ? extra.withExtras(followHub, cx, opts, onMessage, onState) : followHub(cx, opts, onMessage, onState);
+  // Across every hub cockpit.json names (extra.js): the agents view lists theirs too, the apps read the picked machine,
+  // and `hub` names one hub outright.
+  return extra.route(followHub, cx, opts ?? {}, onMessage, onState);
 }
 
 function followHub(cx, { views = [], docs = [], notify = false, focus = null, window: windowCommands = false }, onMessage, onState = () => {}) {
@@ -705,18 +735,7 @@ function followHub(cx, { views = [], docs = [], notify = false, focus = null, wi
             const message = JSON.parse(line);
             if (message.error) throw new Error(message.error);
             if (message.window && secret) {
-              const clipboard = win()?.platform === "macos" ? {
-                wait: () => sleep(cx, 800),
-                read: async () => {
-                  const r = await exec("pbpaste", []);
-                  if (r.code !== 0) throw new Error("could not read the desktop clipboard");
-                  return r.stdout;
-                },
-                write: async (text) => {
-                  const r = await exec("sh", ["-c", 'printf %s "$1" | pbcopy', "sh", text]);
-                  if (r.code !== 0) throw new Error("could not write the desktop clipboard");
-                },
-              } : undefined;
+              const clipboard = desktopClipboard(cx);
               const outcome = await runWindowCommand(message.window, { machine: remote, run, clipboard, focus: focusHere, panes, herdrApp });
               // A late answer can be refused without invalidating this window's live subscription.
               try { await windowReply(message.window.id, secret, message.window.capability, outcome); } catch {}
@@ -798,4 +817,4 @@ async function windowReply(id, secret, capability, outcome) {
   } finally { close(socket); }
 }
 
-extra.configure({ install, Lines, sleep, within });
+extra.configure({ load: LOAD, net, install, Lines, sleep, within, cockpitOn, runnerAct, runWindowCommand, herdrApp, focusHere, desktopClipboard, reads: REMOTE_READS });
