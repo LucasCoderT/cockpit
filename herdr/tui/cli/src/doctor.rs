@@ -653,7 +653,10 @@ impl Doctor {
         let desk = noted["machine"].as_str().filter(|m| !m.trim().is_empty()).map(str::to_string);
         let runs = match &desk {
             Some(machine) => {
-                !bin.is_empty() && self.run(&[&cockpit_core::frontend::program("hc", "HC_BIN"), "exec", "--on", machine, "test", "-x", &bin], Duration::from_secs(20)).is_some_and(|o| o.ok())
+                !bin.is_empty()
+                    && self
+                        .run(&[&cockpit_core::frontend::program("hc", "HC_BIN"), "exec", "--on", machine, "test", "-x", &bin], Duration::from_secs(20))
+                        .is_some_and(|o| o.ok())
             }
             None => !bin.is_empty() && proc::executable(Path::new(&bin)),
         };
