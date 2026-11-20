@@ -104,15 +104,17 @@ test("a subscription's limits show once, by the freshest reading; another accoun
 test("a session's chat, queue and actions go to the hub of its machine", async () => {
   const { extra } = await load();
   await extra.extras();
-  // This machine's session (`t5`) is the macbook hub's; the runner's own (`studio/t4`) the window's; an app follows the pick.
+  // This machine's session (`t5`, which its hub lists) is the macbook hub's; the runner's own (`studio/t4`) the window's.
+  extra.adopt({ name: "macbook", cache: "/c" }, { agents: [{ terminal: "app:t5", address: "t5" }] });
   assert.equal(await extra.targetOf("act", { app: "queue", action: "tell", args: ["app:t5", "hello"] }), "macbook");
   assert.equal(await extra.targetOf("act", { app: "agents", action: "answer", args: [{ terminal: "app:studio/t4" }] }), null);
   assert.equal(await extra.targetOf("view", { name: "chat", args: { terminal: "t5", frontend: "app" } }), "macbook");
   assert.equal(await extra.targetOf("view", { name: "chat", args: { terminal: "studio/t4" } }), null);
   // A driven session (a key, not a terminal) is the hub's that lists it.
-  extra.adopt({ name: "macbook", cache: "/c" }, { agents: [{ terminal: "claude:1794-0", driven: true }] });
+  extra.adopt({ name: "macbook", cache: "/c" }, { agents: [{ terminal: "claude:1794-0", driven: true }, { terminal: "app:t5", address: "t5" }] });
   assert.equal(extra.hubOf("claude:1794-0", { machine: "studio" }), "macbook");
   assert.equal(await extra.targetOf("act", { app: "session", action: "send", args: [{ key: "claude:1794-0", text: "hi" }] }), "macbook");
   assert.equal(extra.hubOf("claude:9-9", { machine: "studio" }), null, "one no extra hub lists is the window's own");
+  assert.equal(extra.hubOf("app:t4", { machine: "studio" }), null, "a bare address this machine's hub does not list may be the runner's own");
   assert.equal(await extra.targetOf("view", { name: "inbox", args: {} }), null, "the apps follow the pick, none made");
 });

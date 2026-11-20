@@ -306,3 +306,14 @@ test("a dismissed agent leaves Needs you, the bell and Home's count, and stays i
   assert.equal(at("t4").snoozed.label, "till it changes");
   assert.equal(fleet.stageOf({ hubStage: "dismissed" }), "dismissed");
 });
+
+test("a runner's chat names its agent at the desk's address, where the window's rows and actions find it", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const src = await readFile(new URL("../mods/cockpit/chat.js", import.meta.url), "utf8");
+  const body = src.slice(src.indexOf("export function deskChat"), src.indexOf("// The reading column holds"));
+  const deskChat = new Function("toDesktop", `${body.replace("export function", "return function")}`)((a, m) => (a.includes("/") ? a : `${m}/${a}`));
+  const v = deskChat({ agent: { terminal: "app:t4", address: "t4", title: "rolesmith" }, messages: [] }, "studio");
+  assert.deepEqual([v.agent.terminal, v.agent.address, v.agent.remote], ["app:studio/t4", "studio/t4", "studio"]);
+  assert.equal(deskChat({ agent: { terminal: "claude:1-0", driven: true } }, "studio").agent.terminal, "claude:1-0");
+  assert.equal(deskChat({ agent: { terminal: "app:t5" } }, null).agent.terminal, "app:t5", "this machine's own chat stays as it is");
+});

@@ -97,7 +97,10 @@ export function hubOf(handle, primary) {
   if (typeof handle !== "string" || !handle) return null;
   const owner = owners().get(handle) ?? owners().get(handle.startsWith("app:") ? handle : `app:${handle}`);
   if (owner) return owner.name;
-  return handle.startsWith("app:") || /^[^:]*\/?t\d+$/.test(handle) ? targetForAddress(handle, primary) : null;
+  if (!(handle.startsWith("app:") || /^[^:]*\/?t\d+$/.test(handle))) return null;
+  // A bare address no hub lists is no session of this machine's: it may be a runner's at its own address.
+  const at = targetForAddress(handle, primary);
+  return at && !extrasNow().find((e) => e.name === at)?.machine ? null : at;
 }
 
 /** The session a request is about, by its handle: an action's first argument, a view's or fetch's `terminal`. */

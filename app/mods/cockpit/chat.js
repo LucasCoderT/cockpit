@@ -10,6 +10,7 @@ const ScrollHandle = base.ScrollHandle ?? null;
 import { focused, run, exec, notify, shared, setShared, appHome, window as win } from "herdr";
 import * as hub from "./hub.js";
 import * as extra from "./extra.js";
+import { toDesktop } from "./address.js";
 import { take, testKeys } from "./person.js";
 import { openUrl } from "./hub.js";
 import { openPanel } from "./status.js";
@@ -132,6 +133,17 @@ const CEILING = 20_000;
 export const DRAW = 300;
 
 /** The reading column: wide enough for a table, narrow enough to read. */
+/**
+ * A chat view as this desk addresses it: a runner's hub names its agent at the runner's own address (`app:t4`), the
+ * window's rows and actions at the desk's (`app:studio/t4`). A driven session's key is the same on both ends.
+ */
+export function deskChat(value, machine) {
+  const a = value?.agent;
+  if (!machine || !a || a.driven || typeof (a.terminal ?? a.address) !== "string") return value;
+  const address = toDesktop(String(a.address ?? a.terminal).replace(/^app:/, ""), machine);
+  return { ...value, agent: { ...a, remote: machine, address, terminal: `app:${address}` } };
+}
+
 // The reading column holds as many characters at any text size: 760 px at Herdr's default 13.
 const readW = () => Math.round((760 * TEXT.base) / 13);
 const GUTTER = 24;
@@ -700,6 +712,8 @@ export default class Chat {
     if (this.watchedDriven) views.push({ name: "session", args: { key: subject } });
     // A session of another hub (this machine's, another runner's: extra.js) is read there, its queue with it.
     const at = extra.hubOf(subject, hub.installedNow?.() ?? null);
+    // The runner whose hub answers, if any: its agent comes at the runner's own address, and goes on at the desk's.
+    this.chatMachine = at ? extra.extrasNow().find((e) => e.name === at)?.machine ?? null : hub.remoteMachine?.() ?? null;
     this.chat = hub.subscribe(
       cx,
       { views, ...(at ? { hub: at } : {}) },
@@ -708,7 +722,7 @@ export default class Chat {
         if (m.view === "chat") {
           // Reading back, the messages held stay, and the page's new ones go after them.
           this.kept = !this.pinned && this.value ? joinPages(this.kept ?? this.value.messages, m.value?.messages ?? []) : null;
-          this.value = m.value;
+          this.value = deskChat(m.value, this.chatMachine);
           this.loadingEarlier = false;
         }
         if (m.view === "queue") this.queues = m.value;
