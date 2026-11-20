@@ -8,6 +8,7 @@
 import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import * as hub from "./hub.js";
+import { take } from "./person.js";
 import { rowsOf, goToAgent } from "./fleet.js";
 import { openReader } from "./reader.js";
 import {
@@ -106,13 +107,14 @@ export default class Aq {
     this.logSub?.stop();
   }
 
-  command(c, cx) {
+  /** A view command; a menu's `aq:act:<action>:<id>[:<ttl>]` acts only with the key the person's pick minted. */
+  command(c, cx, key = null) {
     if (c === "focus" || c === "show:aq") {
       this.visible = true;
       this.handle.focus();
     } else if (c.startsWith("show:") && this.visible) this.visible = false;
     const [scope, what, id, ...rest] = c.split(":");
-    if (scope === "aq" && what === "act") this.act(id, rest[0], rest[1], cx);
+    if (scope === "aq" && what === "act" && take(c, key)) this.act(id, rest[0], rest[1], cx);
     cx.notify();
   }
 

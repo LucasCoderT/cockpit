@@ -22,8 +22,8 @@ sh "$root/fetch-apps.sh"
 
 # The spaces' supervisors and their apps stop, then ensure-spaces (from the new folder) moves the link, prunes old folders
 # and starts them again.
-pkill -f "(^|/)cockpit space (inbox|todo|runbook|meetings|monitor|routines)$"
-pkill -f "cockpit (inbox|todo|runbook|meetings|monitor|routines) cockpit-space"
+pkill -f "(^|/)cockpit space (inbox|todo|runbook|meetings|monitor|routines|review|mail)$"
+pkill -f "cockpit (inbox|todo|runbook|meetings|monitor|routines|review|mail) cockpit-space"
 sleep 1
 if [ -n "$REGISTERED" ]; then
   sh "$root/ensure-spaces.sh"
@@ -32,6 +32,10 @@ fi
 # The hub serves the old folder: it goes once the link names the new one, so the first app that needs it (a Herdr window
 # reconnects at once) starts the new binary.
 pkill -f "(^|/)cockpit hub$"
+
+# The Chromium side browser, when it is the one in use: what the new version pins is installed, and the running one
+# ends, so the next page opens in the new one with its tabs back.
+sh "$root/cockpit.sh" browser refresh >/dev/null 2>&1 &
 
 # The Herdr app takes the new layout and mod (it reloads a mod on its own), when it has them.
 [ -f "$app_home/layouts/cockpit.json" ] && sh "$root/cockpit.sh" app install >/dev/null
@@ -42,3 +46,15 @@ sh "$root/reload.sh" --idle >/dev/null 2>&1 || true
 version=$(jq -r .version "$(dirname "$root")/plugin/.claude-plugin/plugin.json" 2>/dev/null) ||
   version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$root/herdr-plugin.toml")
 sh "$root/cockpit.sh" notify "Cockpit updated" "Now on ${version:-the latest version}; idle sessions reloaded the mod." "space:inbox"
+
+# What the update brought: a terminal asks about its options and layout; without input it prints them. The Herdr app's
+# update dialog asks there, and a background TUI update opens its popup.
+if [ "${COCKPIT_FRONTEND:-}" != app ]; then
+  if [ -t 0 ] && [ -t 1 ]; then
+    sh "$root/cockpit.sh" options ask
+  elif [ -t 1 ]; then
+    sh "$root/cockpit.sh" options new
+  elif [ -n "$REGISTERED" ]; then
+    sh "$root/whats-new.sh"
+  fi
+fi

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>cockpit preview</title>
+<!-- The Herdr gallery's picture, app/preview.png: this page at 1600 by 1000. -->
+<style>
+  :root { --bg: #f3efe6; --ink: #17171a; --muted: #55524c; --orange: #d4541c; --line: #ddd6c8; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1600px; height: 1000px; overflow: hidden; background: var(--bg); color: var(--ink);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
+  .left { position: absolute; left: 64px; top: 60px; width: 440px; }
+  .brand { display: flex; align-items: center; gap: 16px; font-size: 44px; font-weight: 800; letter-spacing: -0.03em; }
+  .brand img { width: 64px; height: 64px; }
+  h1 { margin: 34px 0 0; font-size: 50px; line-height: 1.07; letter-spacing: -0.035em; font-weight: 800; }
+  h1 span { color: var(--orange); display: block; }
+  ol { list-style: none; margin: 38px 0 0; padding: 0; display: grid; gap: 24px; }
+  li { display: grid; grid-template-columns: 44px 1fr; column-gap: 16px; }
+  .n, .mark { border-radius: 50%; background: var(--orange); color: #fff; font-weight: 800; display: grid; place-items: center; }
+  .n { width: 44px; height: 44px; font-size: 22px; }
+  li b { display: block; font-size: 25px; letter-spacing: -0.015em; line-height: 1.2; }
+  li p { margin: 5px 0 0; font-size: 20px; line-height: 1.35; color: var(--muted); }
+  .more { margin: 40px 0 0; padding-top: 26px; border-top: 1px solid var(--line); font-size: 20px; line-height: 1.4; color: var(--muted); }
+  .more b { display: block; color: var(--ink); font-size: 23px; letter-spacing: -0.015em; margin-bottom: 4px; }
+  .shadow { box-shadow: 0 2px 6px rgb(0 0 0 / 0.08), 0 30px 70px -24px rgb(80 40 10 / 0.45); outline: 1px solid rgb(0 0 0 / 0.5); }
+  .shot { position: absolute; left: 596px; top: 52px; width: 960px; height: 600px; border-radius: 16px; overflow: hidden; background: #101010; }
+  .shot img { width: 100%; height: 100%; display: block; }
+  .links { position: absolute; left: 652px; top: 624px; width: 904px; height: 72px; border-radius: 14px; overflow: hidden; background: #0f1012;
+    display: flex; align-items: center; justify-content: flex-end; padding-right: 6px; }
+  .links img { height: 42px; display: block; }
+  .mark { position: absolute; width: 46px; height: 46px; margin: -23px 0 0 -23px; font-size: 23px; border: 3px solid #fff; box-shadow: 0 4px 14px rgb(0 0 0 / 0.45); }
+  .tiles { position: absolute; left: 596px; top: 744px; width: 960px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .tile b { font-size: 19px; letter-spacing: -0.01em; }
+  .tile span { font-size: 17px; color: var(--muted); }
+  .tile .crop { margin-top: 9px; height: 162px; border-radius: 11px; overflow: hidden; position: relative; background: #101010; }
+  .tile .crop img { position: absolute; left: -146px; top: -24px; width: 730px; }
+</style></head>
+<body>
+  <div class="left">
+    <div class="brand"><img src="../logo.svg" alt="">cockpit</div>
+    <h1>Your coding agents <span>and your workday, in one window.</span></h1>
+    <ol>
+      <li><div class="n">1</div><div><b>Your day, next to your agents</b><p>Inbox, mail, runbooks, meetings and releases, one key away.</p></div></li>
+      <li><div class="n">2</div><div><b>Every session's links</b><p>Its PR, ticket, CI, design and Slack thread, one click from the agent.</p></div></li>
+      <li><div class="n">3</div><div><b>A real browser inside Herdr</b><p>The agent's page beside it. Click what is wrong, the agent gets your note.</p></div></li>
+    </ol>
+    <p class="more"><b>And many more features</b> Cockpit Chat, to-dos, a release monitor, routines, a command palette, recaps, usage limits, notifications…</p>
+  </div>
+  <div class="shot shadow"><img src="../app/browser-dark.png" alt=""></div>
+  <div class="links shadow"><img src="../app/links-dark.png" alt=""></div>
+  <div class="tiles">
+    <div class="tile"><b>Inbox</b> <span>· reviews, PRs, CI</span><div class="crop shadow"><img src="../app/inbox-dark.png" alt=""></div></div>
+    <div class="tile"><b>Mail</b> <span>· unread first</span><div class="crop shadow"><img src="../app/mail-dark.png" alt=""></div></div>
+    <div class="tile"><b>Runbooks</b> <span>· steps to ship</span><div class="crop shadow"><img src="../app/runbook-dark.png" alt=""></div></div>
+    <div class="tile"><b>Meetings</b> <span>· join, with a brief</span><div class="crop shadow"><img src="../app/meetings-dark.png" alt=""></div></div>
+  </div>
+  <div class="mark" style="left:566px;top:757px">1</div>
+  <div class="mark" style="left:652px;top:660px">2</div>
+  <div class="mark" style="left:1410px;top:426px">3</div>
+</body></html>

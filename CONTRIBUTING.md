@@ -9,6 +9,7 @@ agree on the shape before you write it.
 | --- | --- |
 | `herdr/tui/` | The Rust workspace behind the one `cockpit` binary: `core` (shared kit, agents table, transcripts), `hub` (the background process every app talks to), the space apps (`agents`, `inbox`, `runbook`, `show`, `todo`, `meetings`, `monitor`, `routines`, `palette`, `aq`), `connectors` (the MCP client the hub calls your servers with, and each source's mapping), `update` (self-update) and `cli` (the binary and its subcommands, the MCP server). |
 | `app/` | The Herdr app half: `layouts/`, the `mods/cockpit/` mod (plain ES modules on Herdr's `gpui-kit`), `keys.json` and `RECIPE.md`. `docs/app.md` explains how it fits together. |
+| `browser/` | The Chromium side browser: an Electron shell in plain ES modules (`main/`), its toolbar (`ui/`), the pinned versions it runs on (`pins.json`) and its tests. `docs/browser.md` is its guide. |
 | `plugin/` | The Claude Code plugin: TypeScript hooks in `hooks/`, commands, the side-browser skill, tests in `tests/`. |
 | `codex/` | The Codex plugin: the MCP server entry and the same side-browser skill. |
 | `herdr/*.sh` | The herdr TUI integration: the scripts `herdr-plugin.toml` binds to keys and events. |
@@ -46,8 +47,28 @@ sh scripts/sandbox.sh stop
 ```
 
 The sandbox runs on a fake HOME with its own hub and copies `app/` into its window on every save. Keep
-`COCKPIT_SANDBOX` short (macOS caps socket paths at 104 bytes); `HC_SESSION=<name>` gives it an empty herdr-core of its
-own, so none of your terminals shows in it. The top of `scripts/sandbox.sh` lists every command.
+`COCKPIT_SANDBOX` short (macOS caps socket paths at 104 bytes). It gets an empty herdr-core of its own (`HC_SESSION`,
+by default the sandbox folder's name), so none of your terminals shows in it. That herdr-core runs with your real HOME:
+the sandbox's `hc` refuses to type a line into its terminals (a fix's command, a runbook step, a prompt) unless
+`SANDBOX_ALLOW_SEND=1`, and a fix in the sandbox's Cockpit settings shows its command rather than running it. The top
+of `scripts/sandbox.sh` lists every command.
+
+### The Chromium side browser
+
+The shell has no build step either. Its unit tests need Node 22.13 or later (the cookie readers use `node:sqlite`); the
+end-to-end test starts a real Electron on a home folder of its own, with Chromium's mock keychain:
+
+```sh
+node --test browser/tests/*.test.mjs
+sh scripts/browser-smoke.sh        # macOS: the pinned Electron, downloaded once and checked, then the end-to-end test
+```
+
+`COCKPIT_BROWSER_ELECTRON` names an Electron you already have, such as the one `cockpit browser install` put under
+`~/.cache/cockpit/browser/electron/`. To run the shell from a build that lives outside its checkout,
+name its folder with `COCKPIT_BROWSER_DIR`; `COCKPIT_BROWSER_ELECTRON` and `COCKPIT_AGENT_BROWSER` name other programs
+than the pinned ones. Never start it on another home folder without `COCKPIT_SANDBOX` or
+`COCKPIT_BROWSER_MOCK_KEYCHAIN=1` set: without a keychain macOS asks, on screen, where to keep Chromium's cookie key.
+The sandbox sets the first.
 
 ### The plugins
 
@@ -88,6 +109,8 @@ env -u HC_TERMINAL_ID -u HC_TERMINAL_SOCKET -u HC_SCOPE cargo test --workspace
 cd ../..
 shellcheck -S warning herdr/*.sh install.sh scripts/*.sh docs/screenshots/*.sh
 for f in app/mods/cockpit/*.js; do node --input-type=module --check < "$f" || echo "$f"; done
+for f in browser/main/*.js browser/main/*/*.js browser/ui/*.js; do node --check "$f" || echo "$f"; done
+node --test browser/tests/*.test.mjs
 claude plugin validate plugin && claude plugin test plugin
 sh scripts/check-skills.sh
 sh scripts/app-readme.sh --check

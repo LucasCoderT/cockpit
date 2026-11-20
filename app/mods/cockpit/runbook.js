@@ -9,9 +9,11 @@ import { props, focused, panes, shared, settings, setShared, layout } from "herd
 import * as hub from "./hub.js";
 import { toRunner } from "./address.js";
 import { UpdateBadge, panelVisible } from "./updates.js";
+import { take, holds, MOVE_FIRST } from "./person.js";
+import { sharing } from "./feed.js";
 import {
-  tokens, TEXT, RADIUS, Icon, Badge, Button, Kbd, ListRow, PageHeader, SearchField, TextField, KeyHints, Empty, ErrorState,
-  Skeleton, Command, Toaster, Flashes, Scroller, Hover, Progress, Ring, Section, SidePanel, AlertDialog, Spinner, openMenu, alpha,
+  tokens, TEXT, RADIUS, Icon, Badge, Button, Kbd, ListRow, PageHeader, SearchField, TextField, KeyHints, Empty,
+  Skeleton, Command, Toaster, Flashes, Scroller, Hover, Progress, Ring, Section, SidePanel, AlertDialog, Spinner, openMenu, alpha, HubDownBody,
 } from "./ui.js";
 
 /** The runbook most recently written by the focused agent, then its ticket or checkout match. */
@@ -37,6 +39,8 @@ export function slugFor(books, agents, focusedTerminal, machine, pane) {
   const where = `${pane?.branch ?? row?.branch ?? ""} ${pane?.cwd ?? row?.cwd ?? ""}`.toLowerCase();
   return books.filter(b=>where.includes(b.slug)).sort((a,b)=>b.slug.length-a.slug.length)[0]?.slug ?? null;
 }
+// The agents view, followed once per window whichever copies ask (feed.js).
+const following = sharing(hub.subscribe);
 
 const mono = () => settings().font ?? "JetBrains Mono";
 const ADDER = "\u0000adder";
@@ -116,7 +120,7 @@ export default class Runbook {
     });
     this.query.on("submit", (_e, cx) => this.runPalette(cx));
 
-    this.sub = hub.subscribe(
+    this.sub = following(
       cx,
       { views: this.panel ? ["runbook", "agents"] : ["runbook"], focus: this.panel ? null : "runbook" },
       (m, cx) => {
@@ -125,7 +129,7 @@ export default class Runbook {
           this.machine = m.value?.remote ?? null;
           this.agents = m.value?.agents ?? m.value?.rows ?? (Array.isArray(m.value) ? m.value : []);
         }
-        if (m.focus === "runbook" && !this.panel) this.goTo(m.target, cx);
+        if (m.focus === "runbook" && !this.panel) this.goTo(m.target, cx, true);
         cx.notify();
       },
       (state, cx) => {
@@ -139,10 +143,10 @@ export default class Runbook {
     this.sub?.stop();
   }
 
-  command(c, cx) {
+  command(c, cx, menuKey = null) {
     if ((c === "focus" || c === "show:runbook") && !this.panel) this.handle.focus();
     const [scope, action, key, extra] = c.split(":");
-    if (scope === this.scope) this.menuAction(action, key, extra, cx);
+    if (scope === this.scope) this.menuAction(action, key, extra, cx, take(c, menuKey));
     cx.notify();
   }
 
@@ -315,13 +319,18 @@ export default class Runbook {
     );
   }
 
-  goTo(target, cx) {
+  /**
+   * A runbook or a step brought into view, or steps played as done. Pointed at by a hub focus or a command
+   * (`pointed`), it takes no key that acts until the person moves to it or clicks.
+   */
+  goTo(target, cx, pointed = false) {
     const key = target?.key ?? "";
     const [slug, n] = key.split("#");
     if (!this.bookOf(slug)) {
       if (slug) this.toasts.push(cx, `No runbook ${slug} any more`);
       return;
     }
+    this.pointed = pointed;
     if (target.steps?.length) return this.play(slug, target.steps, cx);
     this.slug = slug;
     const step = n ? this.stepOf(key) : null;
@@ -561,9 +570,16 @@ export default class Runbook {
     cx.notify();
   }
 
-  menuAction(action, key, extra, cx) {
+  /**
+   * A step's or a runbook's menu item. Without the key its menu opened with (`person` false), a window command only
+   * opens a step's editor or adder: it runs, marks and picks nothing.
+   */
+  menuAction(action, key, extra, cx, person = false) {
     const step = this.stepOf(key);
     const book = this.bookOf(key?.split("#")[0]);
+    if (!person && action !== "edit" && action !== "add") return;
+    // A step a window command opened for editing is not the person's pick: its keys wait for a move.
+    if (!person) this.pointed = true;
     if (action === "book" && book) {
       const act = book.acts.find((a) => a.id === extra);
       if (act) this.bookAct(cx, act, book);
@@ -687,6 +703,7 @@ export default class Runbook {
       }
       return false;
     }
+    if (holds(this, e)) return this.toasts.push(cx, MOVE_FIRST, { kind: "info" }), cx.notify(), true;
     const step = this.selected();
     const book = this.book();
     const n = this.selectable().length;
@@ -1000,7 +1017,7 @@ export default class Runbook {
     if (!this.panel && !this.filter && !this.adding)
       rows.push({
         height: 36,
-        el: ListRow(`${this.scope}-adder`, { selected: this.sel === ADDER, muted: true, leading: Icon("plus", { size: 16 }), title: "Add a step", meta: Kbd("a"), onClick: (_e, cx) => this.startAdd(cx) }),
+        el: ListRow(`${this.scope}-adder`, { selected: this.sel === ADDER, muted: true, leading: Icon("plus", { size: 16 }), title: "Add a step", meta: Kbd("a"), tooltip: "Add a step  a", onClick: (_e, cx) => this.startAdd(cx) }),
       });
     return rows;
   }
@@ -1214,7 +1231,7 @@ export default class Runbook {
   }
 
   loading(k) {
-    if (this.status.startsWith("error")) return ErrorState({ title: "Cannot reach the cockpit hub", message: this.status.slice(7) });
+    if (this.status.startsWith("error")) return HubDownBody("runbook-hub-down", this, this.status, k);
     return v_flex().p(24).gap(12).children([0, 1, 2, 3].map((i) => h_flex().gap(10).items_center().child(Skeleton({ w: 24, h: 16 })).child(Skeleton({ w: 110, h: 20 })).child(Skeleton({ w: 160 + ((i * 97) % 240) }))));
   }
 
@@ -1294,6 +1311,8 @@ export default class Runbook {
         }
       })
       .on_mouse_down("left", () => {
+        // A click in the view makes the row the person's, whatever a command pointed at.
+        this.pointed = false;
         if (!this.editing && !this.adding && !this.filtering && !this.palette) this.handle.focus();
       })
       .on_key_down((e, cx) => {

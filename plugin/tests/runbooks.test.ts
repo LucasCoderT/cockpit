@@ -8,7 +8,7 @@ function fixture() {
  session:{id:async()=> 'acme-session',cwd:async()=>'/src/acme/api'},
  fs:{read:async(p:string)=>{if(!files.has(p))throw Error('ENOENT');return files.get(p)!},write:async(p:string,s:string)=>void files.set(p,s),
  stat:async(p:string)=>{if(!files.has(p))throw Error('ENOENT');return {size:1}}},
- process:{run:async(argv:string[])=>{calls.push(argv);if(argv[0]==='mv'){files.set(argv[2]!,files.get(argv[1]!)!);files.delete(argv[1]!)}
+ process:{run:async(argv:string[])=>{calls.push(argv);if(argv[0]==='mv'){const [from,to]=argv.slice(-2);files.set(to!,files.get(from!)!);files.delete(from!)}
  if(argv.join(' ').includes('command -v'))return ran(1)
  if(argv.at(-1)==='ls') return ran(0,JSON.stringify({spaces:[{id:'s1',tabs:[{id:'tab1',terminals:[{terminal:'t14',pane:'p14'}]}]}]}))
  return ran(0,'{}')}}} as unknown as Parameters<typeof noteRunbookWrite>[0]

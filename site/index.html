@@ -36,10 +36,10 @@
 <main>
   <section class="hero">
     <div class="wrap">
-      <a class="pill" href="desktop.html#mail"><b>New in 0.38</b> A Mail space: what needs you, above the updates →</a>
+      <a class="pill" href="#why"><b>New in 1.1</b> A real browser inside Herdr, beside each agent →</a>
       <h1>See every coding agent, <span class="grad">and what it is working on</span></h1>
       <p class="sub">Claude Code, Codex and the other agents Herdr runs, each shown with its ticket, PR, CI run and deploy, and which of them
-        are waiting for an answer. Your reviews, runbooks, meetings and releases are one key away.</p>
+        are waiting for an answer. Your inbox, mail, runbooks and meetings sit in the same window, and a real browser is docked beside each agent.</p>
       <div class="buttons">
         <a class="button primary" href="#install">Install</a>
         <a class="button" href="#demo" data-play><svg class="i play" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>Watch the demo</a>
@@ -62,7 +62,49 @@
     </div>
   </section>
 
-  <section class="section" id="how">
+  <section class="section" id="why">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">Why cockpit</span>
+        <h2>Three things you only get here</h2>
+      </div>
+      <div class="rows">
+        <div class="row wide">
+          <div class="row-text">
+            <h3>Your day, next to your agents</h3>
+            <p>Inbox, mail, runbooks, to-dos, meetings and the release monitor are views of the same window, one key each.</p>
+            <p>Home sums them up: the reviews waiting for you, your PRs to fix, what is next on your calendar, and which agent to answer first.</p>
+          </div>
+          <figure class="frame">
+            <picture class="crop" style="--ar:130/96;--z:123.1%;--x:-23.1%;--y:-4.2%"><source srcset="img/app/home-light.png" media="(prefers-color-scheme: light)"><img src="img/app/home-dark.png" alt="Home: reviews, PRs, the next meetings, and the inbox, mail, runbooks, to-do, releases and routines summed up in one list" width="1600" height="1000" loading="lazy"></picture>
+          </figure>
+        </div>
+        <div class="row stack">
+          <div class="row-text">
+            <h3>Every session keeps its links</h3>
+            <p>The bar under an agent shows its branch, then one button per page it works with: the PR, the ticket, the CI run, the deploy, and what its conversation cites, such as a design or a Slack thread. Each is named after its tool and opens in a click.</p>
+          </div>
+          <figure class="frame strip">
+            <picture><source srcset="img/app/links-light.png" media="(prefers-color-scheme: light)"><img src="img/app/links-dark.png" alt="The status bar of a session: its branch, then GitHub, Linear, CI, Figma, Slack and Datadog buttons" width="1530" height="74" loading="lazy"></picture>
+          </figure>
+        </div>
+        <div class="row wide">
+          <div class="row-text">
+            <h3>A real browser inside Herdr<span class="badge new">New</span></h3>
+            <p>Each session gets a Chromium of its own, docked in the side panel, with your sign-ins. The agent tests its page there while you watch.</p>
+            <p>Click an element and write what should change. The agent gets its selector, its source file and a picture; leave several notes and send them together.</p>
+            <p class="fine">Herdr app on macOS, turned on in Cockpit settings. Everywhere else the browser runs in a terminal pane.</p>
+          </div>
+          <figure class="frame">
+            <picture class="crop" style="--ar:130/94;--z:123.1%;--x:-23.1%;--y:-3.2%"><source srcset="img/app/browser-light.png" media="(prefers-color-scheme: light)"><img src="img/app/browser-dark.png" alt="An agent in its terminal and, beside it, its page in a docked browser with a note being written on the Search button" width="1600" height="1000" loading="lazy"></picture>
+          </figure>
+        </div>
+      </div>
+      <p class="more">And many more features: Cockpit Chat, to-dos, a release monitor, routines, a command palette, recaps, usage limits and notifications. <a href="#features">See them all</a></p>
+    </div>
+  </section>
+
+  <section class="section alt" id="how">
     <div class="wrap">
       <div class="section-head">
         <span class="eyebrow">How it works</span>
@@ -85,7 +127,7 @@
     </div>
   </section>
 
-  <section class="section alt" id="features">
+  <section class="section" id="features">
     <div class="wrap">
       <div class="section-head">
         <span class="eyebrow">Features</span>
@@ -98,16 +140,28 @@
       </div>
       <div class="features" data-show="app">
         <article class="fcard only-app">
-          <a class="fshot" href="desktop.html#home" data-note="App only"><picture class="half-app" style="--z:128%;--x:-27.5%;--y:-4%"><source srcset="img/app/home-light.png" media="(prefers-color-scheme: light)"><img src="img/app/home-dark.png" alt="Home dashboard" width="1600" height="1025" loading="lazy"></picture></a>
+          <a class="fshot" href="desktop.html#home" data-note="App only"><picture class="half-app" style="--z:128%;--x:-24.5%;--y:-4%"><source srcset="img/app/home-light.png" media="(prefers-color-scheme: light)"><img src="img/app/home-dark.png" alt="Home dashboard" width="1600" height="1025" loading="lazy"></picture></a>
           <div class="fbody"><h3>Home dashboard</h3><p>KPI tiles, the next move, agents by stage; Up next, Apps and Activity.</p><span class="where">Herdr APP</span></div>
         </article>
         <article class="fcard">
           <a class="fshot" href="desktop.html#agents"><picture class="half-app" style="--z:100%;--x:0%;--y:0%"><source srcset="img/app/work-light.png" media="(prefers-color-scheme: light)"><img src="img/app/work-dark.png" alt="Agents beside their work" width="1600" height="1025" loading="lazy"></picture><img class="half-tui tui" src="img/sidebar.svg" alt="Agents beside their work" width="372" height="578" loading="lazy"></a>
           <div class="fbody"><h3>Agents beside their work</h3><p>Questions answered in place; ticket, branch, PR and CI on every agent.</p><span class="where">Herdr APP · Herdr TUI</span></div>
         </article>
+        <article class="fcard only-app">
+          <a class="fshot" href="desktop.html#browser" data-note="TUI: in a terminal pane"><picture class="half-app" style="--z:200%;--x:-100%;--y:-2%"><source srcset="img/app/browser-light.png" media="(prefers-color-scheme: light)"><img src="img/app/browser-dark.png" alt="Browser beside the agent" width="1600" height="1000" loading="lazy"></picture></a>
+          <div class="fbody"><h3>Browser beside the agent<span class="badge new">New</span></h3><p>A Chromium per session, docked in the side panel: tabs, DevTools, phone sizes, your sign-ins.</p><span class="where">Herdr APP · macOS</span></div>
+        </article>
+        <article class="fcard only-app">
+          <a class="fshot" href="desktop.html#notes" data-note="App only"><picture class="half-app" style="--z:230%;--x:-124%;--y:-63%"><source srcset="img/app/browser-light.png" media="(prefers-color-scheme: light)"><img src="img/app/browser-dark.png" alt="Notes on the page" width="1600" height="1000" loading="lazy"></picture></a>
+          <div class="fbody"><h3>Notes on the page<span class="badge new">New</span></h3><p>Click an element, write what should change; the agent gets the selector, the file and a picture.</p><span class="where">Herdr APP · macOS</span></div>
+        </article>
+        <article class="fcard only-app">
+          <a class="fshot" href="desktop.html#chat" data-note="App only"><picture class="half-app" style="--z:128%;--x:-27.5%;--y:-4%"><source srcset="img/app/chat-light.png" media="(prefers-color-scheme: light)"><img src="img/app/chat-dark.png" alt="Cockpit Chat" width="1600" height="1000" loading="lazy"></picture></a>
+          <div class="fbody"><h3>Cockpit Chat<span class="badge new">New</span></h3><p>One agent as a conversation, turns folded, permissions answered in place; no terminal needed.</p><span class="where">Herdr APP</span></div>
+        </article>
         <article class="fcard">
-          <a class="fshot" href="desktop.html#show"><picture class="half-app" style="--z:170%;--x:-70%;--y:-7%"><source srcset="img/app/show-light.png" media="(prefers-color-scheme: light)"><img src="img/app/show-dark.png" alt="Charts, drawn unaskedNew" width="1600" height="1025" loading="lazy"></picture><img class="half-tui tui" src="img/show.svg" alt="Charts, drawn unaskedNew" width="1296" height="679" loading="lazy"></a>
-          <div class="fbody"><h3>Charts, drawn unasked<span class="badge new">New</span></h3><p>Figure tiles, area, donut and stacked bars beside the session.</p><span class="where">Herdr APP · Herdr TUI</span></div>
+          <a class="fshot" href="desktop.html#show"><picture class="half-app" style="--z:170%;--x:-70%;--y:-7%"><source srcset="img/app/show-light.png" media="(prefers-color-scheme: light)"><img src="img/app/show-dark.png" alt="Charts, drawn unasked" width="1600" height="1025" loading="lazy"></picture><img class="half-tui tui" src="img/show.svg" alt="Charts, drawn unasked" width="1296" height="679" loading="lazy"></a>
+          <div class="fbody"><h3>Charts, drawn unasked</h3><p>Figure tiles, area, donut and stacked bars beside the session.</p><span class="where">Herdr APP · Herdr TUI</span></div>
         </article>
         <article class="fcard only-app">
           <a class="fshot" href="desktop.html#blueprint" data-note="TUI: drawn as text"><picture class="half-app" style="--z:170%;--x:-70%;--y:-28%"><source srcset="img/app/blueprint-light.png" media="(prefers-color-scheme: light)"><img src="img/app/blueprint-dark.png" alt="Live blueprint" width="1600" height="1025" loading="lazy"></picture></a>
@@ -130,7 +184,7 @@
           <div class="fbody"><h3>Guided walkthrough</h3><p>The diff explained in reading order, steps you can follow, untested parts called out.</p><span class="where">Herdr APP</span></div>
         </article>
         <article class="fcard">
-          <a class="fshot" href="desktop.html#inbox"><picture class="half-app" style="--z:128%;--x:-27.5%;--y:-4%"><source srcset="img/app/inbox-light.png" media="(prefers-color-scheme: light)"><img src="img/app/inbox-dark.png" alt="Inbox" width="1600" height="1025" loading="lazy"></picture><img class="half-tui tui" src="img/inbox.svg" alt="Inbox" width="1044" height="963" loading="lazy"></a>
+          <a class="fshot" href="desktop.html#inbox"><picture class="half-app" style="--z:128%;--x:-24.5%;--y:-4%"><source srcset="img/app/inbox-light.png" media="(prefers-color-scheme: light)"><img src="img/app/inbox-dark.png" alt="Inbox" width="1600" height="1025" loading="lazy"></picture><img class="half-tui tui" src="img/inbox.svg" alt="Inbox" width="1044" height="963" loading="lazy"></a>
           <div class="fbody"><h3>Inbox</h3><p>Alerts, reviews, your PRs and tickets by kind; merge, or start an agent on one.</p><span class="where">Herdr APP · Herdr TUI</span></div>
         </article>
         <article class="fcard">
@@ -142,7 +196,7 @@
           <div class="fbody"><h3>Every agent at once</h3><p>Agents by stage with their question and recap, or what one did while you were away.</p><span class="where">Herdr APP · Herdr TUI</span></div>
         </article>
         <article class="fcard">
-          <a class="fshot" href="desktop.html#runbook"><picture class="half-app" style="--z:128%;--x:-27.5%;--y:-4%"><source srcset="img/app/runbook-light.png" media="(prefers-color-scheme: light)"><img src="img/app/runbook-dark.png" alt="Runbook" width="1600" height="1025" loading="lazy"></picture><img class="half-tui tui" src="img/runbook-done.svg" alt="Runbook" width="1212" height="679" loading="lazy"></a>
+          <a class="fshot" href="desktop.html#runbook"><picture class="half-app" style="--z:128%;--x:-24.5%;--y:-4%"><source srcset="img/app/runbook-light.png" media="(prefers-color-scheme: light)"><img src="img/app/runbook-dark.png" alt="Runbook" width="1600" height="1025" loading="lazy"></picture><img class="half-tui tui" src="img/runbook-done.svg" alt="Runbook" width="1212" height="679" loading="lazy"></a>
           <div class="fbody"><h3>Runbook</h3><p>The steps left to ship a ticket, each with its PR, deploy or command.</p><span class="where">Herdr APP · Herdr TUI</span></div>
         </article>
         <article class="fcard">
@@ -150,11 +204,11 @@
           <div class="fbody"><h3>To-do</h3><p>Your list, with the tickets and links it mentions.</p><span class="where">Herdr APP · Herdr TUI</span></div>
         </article>
         <article class="fcard">
-          <a class="fshot" href="desktop.html#meetings"><picture class="half-app" style="--z:128%;--x:-27.5%;--y:-4%"><source srcset="img/app/meetings-light.png" media="(prefers-color-scheme: light)"><img src="img/app/meetings-dark.png" alt="Meetings" width="1600" height="1025" loading="lazy"></picture><img class="half-tui tui" src="img/meetings.svg" alt="Meetings" width="842" height="435" loading="lazy"></a>
+          <a class="fshot" href="desktop.html#meetings"><picture class="half-app" style="--z:128%;--x:-24.5%;--y:-4%"><source srcset="img/app/meetings-light.png" media="(prefers-color-scheme: light)"><img src="img/app/meetings-dark.png" alt="Meetings" width="1600" height="1025" loading="lazy"></picture><img class="half-tui tui" src="img/meetings.svg" alt="Meetings" width="842" height="435" loading="lazy"></a>
           <div class="fbody"><h3>Meetings</h3><p>Your week, with join and a brief prepared before each one.</p><span class="where">Herdr APP · Herdr TUI</span></div>
         </article>
         <article class="fcard only-app">
-          <a class="fshot" href="desktop.html#mail" data-note="App shot"><picture class="half-app" style="--z:128%;--x:-27.5%;--y:-4%"><source srcset="img/app/mail-light.png" media="(prefers-color-scheme: light)"><img src="img/app/mail-dark.png" alt="Mail" width="1600" height="1025" loading="lazy"></picture></a>
+          <a class="fshot" href="desktop.html#mail" data-note="App shot"><picture class="half-app" style="--z:128%;--x:-24.5%;--y:-4%"><source srcset="img/app/mail-light.png" media="(prefers-color-scheme: light)"><img src="img/app/mail-dark.png" alt="Mail" width="1600" height="1025" loading="lazy"></picture></a>
           <div class="fbody"><h3>Mail<span class="badge">opt-in</span></h3><p>Your inbox, unread first, read whole beside the list; reply, archive or mark read.</p><span class="where">Herdr APP · Herdr TUI</span></div>
         </article>
         <article class="fcard">
@@ -181,7 +235,7 @@
     </div>
   </section>
 
-  <section class="section" id="tour">
+  <section class="section alt" id="tour">
     <div class="wrap">
       <div class="section-head">
         <span class="eyebrow">Tour</span>
@@ -192,6 +246,8 @@
       <div class="tabs" role="tablist" aria-label="Screens">
         <button role="tab" id="t-home" aria-controls="p-home" aria-selected="true">Home</button>
         <button role="tab" id="t-work" aria-controls="p-work" aria-selected="false" tabindex="-1">Work</button>
+        <button role="tab" id="t-browser" aria-controls="p-browser" aria-selected="false" tabindex="-1">Browser</button>
+        <button role="tab" id="t-chat" aria-controls="p-chat" aria-selected="false" tabindex="-1">Chat</button>
         <button role="tab" id="t-show" aria-controls="p-show" aria-selected="false" tabindex="-1">Charts</button>
         <button role="tab" id="t-blueprint" aria-controls="p-blueprint" aria-selected="false" tabindex="-1">Blueprint</button>
         <button role="tab" id="t-inbox" aria-controls="p-inbox" aria-selected="false" tabindex="-1">Inbox</button>
@@ -207,6 +263,18 @@
         <figure class="frame">
           <picture><source srcset="img/app/work-light.png" media="(prefers-color-scheme: light)"><img class="app-shot" src="img/app/work-dark.png" alt="An agent at work in its terminal card" width="1600" height="1025" loading="lazy"></picture>
           <figcaption><b>Work.</b> The agent in a floating card, the questions waiting on you beside it.</figcaption>
+        </figure>
+      </div>
+      <div class="panel" role="tabpanel" id="p-browser" aria-labelledby="t-browser">
+        <figure class="frame">
+          <picture><source srcset="img/app/browser-light.png" media="(prefers-color-scheme: light)"><img class="app-shot" src="img/app/browser-dark.png" alt="The agent's page in a docked browser, a note being written on it" width="1600" height="1000" loading="lazy"></picture>
+          <figcaption><b>Browser.</b> The agent's page beside it; click an element to tell the agent what to change.</figcaption>
+        </figure>
+      </div>
+      <div class="panel" role="tabpanel" id="p-chat" aria-labelledby="t-chat">
+        <figure class="frame">
+          <picture><source srcset="img/app/chat-light.png" media="(prefers-color-scheme: light)"><img class="app-shot" src="img/app/chat-dark.png" alt="Cockpit Chat on one agent, with a permission to answer" width="1600" height="1000" loading="lazy"></picture>
+          <figcaption><b>Chat.</b> One agent as a conversation, its permission answered in place.</figcaption>
         </figure>
       </div>
       <div class="panel" role="tabpanel" id="p-show" aria-labelledby="t-show">
@@ -230,7 +298,7 @@
     </div>
   </section>
 
-  <section class="section alt" id="halves">
+  <section class="section" id="halves">
     <div class="wrap">
       <div class="section-head">
         <span class="eyebrow">Two ways to run it</span>
@@ -248,6 +316,8 @@
               <li><svg class="i"><use href="#i-check"/></svg><span>Home dashboard with the next move</span></li>
               <li><svg class="i"><use href="#i-check"/></svg><span>Sidebar: questions answered in place, agents by ticket</span></li>
               <li><svg class="i"><use href="#i-check"/></svg><span>Side panel per agent: documents, review, runbook, files</span></li>
+              <li><svg class="i"><use href="#i-check"/></svg><span>A Chromium browser docked beside each agent (macOS)</span></li>
+              <li><svg class="i"><use href="#i-check"/></svg><span>Cockpit Chat: one agent read as a conversation</span></li>
               <li><svg class="i"><use href="#i-check"/></svg><span>Buttons, hover cards, right-click menus, <kbd>⌘</kbd> keys</span></li>
             </ul>
             <a class="button" href="desktop.html">Explore the app <svg class="i"><use href="#i-arrow"/></svg></a>
@@ -273,7 +343,7 @@
     </div>
   </section>
 
-  <section class="section" id="install">
+  <section class="section alt" id="install">
     <div class="wrap install">
       <div>
         <span class="eyebrow">Install</span>
@@ -311,7 +381,7 @@
     </div>
   </section>
 
-  <section class="section alt" id="faq">
+  <section class="section" id="faq">
     <div class="wrap">
       <div class="section-head">
         <span class="eyebrow">FAQ</span>

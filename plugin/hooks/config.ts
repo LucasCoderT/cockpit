@@ -165,6 +165,8 @@ export type Config = {
   notifications: boolean
   // Where an agent runs its E2E tests of a front change: terminal-browser beside it, or Claude in Chrome.
   e2eBrowser: 'terminal-browser' | 'chrome'
+  // The browser beside an agent: terminal-browser in a pane, or cockpit's Chromium window docked in the Herdr app (macOS).
+  sideBrowser: 'terminal-browser' | 'chromium'
   // A browser beside an agent whose space stayed out of view this long closes, to stop it drawing; 0 keeps it.
   browserIdleMinutes: number
   herdrPluginRoot: string
@@ -331,6 +333,7 @@ const DEFAULTS: Config = {
   brief: { enabled: true, at: '08:30', weekends: false },
   notifications: true,
   e2eBrowser: 'terminal-browser',
+  sideBrowser: 'terminal-browser',
   browserIdleMinutes: 60,
   herdrPluginRoot: '',
   spaces: ['inbox', 'terminal', 'actions', 'to-do', 'runbook', 'meetings'],
@@ -464,9 +467,16 @@ export function fill(template: string, values: Record<string, string>) {
 }
 
 
-// A file other sessions or the herdr apps read, written beside it then moved in place, so none reads half of it.
-export async function writeAtomic($: $, path: string, body: string) {
+/** What writing a file whole takes of the engine: `$` itself, or a test's stand-in. */
+export type Writer = { fs: Pick<$['fs'], 'write'>; process: Pick<$['process'], 'run'> }
+
+// A file other sessions or the herdr apps read, written beside it then moved in place, so none reads half of it; when
+// the move fails, the old file stays and the temporary one goes.
+export async function writeAtomic($: Writer, path: string, body: string) {
   const tmp = `${path}.${Math.random().toString(36).slice(2)}.tmp`
   await $.fs.write(tmp, body)
-  if ((await $.process.run(['mv', tmp, path])).exitCode !== 0) throw new Error(`could not write ${path}`)
+  const moved = await $.process.run(['mv', '-f', tmp, path]).catch(() => undefined)
+  if (moved?.exitCode === 0) return
+  await $.process.run(['rm', '-f', tmp]).catch(() => undefined)
+  throw new Error(`could not write ${path}`)
 }

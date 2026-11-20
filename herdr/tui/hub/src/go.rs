@@ -37,14 +37,21 @@ pub fn go(target: &Value) -> Value {
             Err(error) => json!({"error":error.to_string(),"kind":error.kind()}),
         };
     }
-    focus::request(app, target);
-    crate::views::focus(app, target);
+    // The app comes into view first, so the view that brings the item into view is there to hear it.
     if let Some(space) = space_of(app) {
         let shown = frontend::show_app(if app == "to-do" { "todo" } else { app }, space);
         if !shown && frontend::current() == frontend::Frontend::App {
             return json!({"error":"the local Herdr window did not answer","kind":"failed"});
         }
     }
+    focus::request(app, target);
+    crate::views::focus(app, target);
+    // A view the show just made subscribes a moment later: it hears the target again then.
+    let (app, target) = (app.to_string(), target.clone());
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        crate::views::focus(&app, &target);
+    });
     json!({"ok": true})
 }
 

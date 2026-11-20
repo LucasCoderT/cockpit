@@ -12,7 +12,7 @@ function setup(on:Parameters<Parameters<typeof test>[1]>[1]) {
  on('fs.list',()=>({value:[]}));
  on('fs.write',(_,e)=>{files.set(e.path,e.text);stamps.set(e.path,++clock);return {value:undefined}});
  on('process.run',(_,e)=>{
-  if(e.argv[0]==='mv'){files.set(e.argv[2]!,files.get(e.argv[1]!)!);files.delete(e.argv[1]!)}
+  if(e.argv[0]==='mv'){const [from,to]=e.argv.slice(-2);files.set(to!,files.get(from!)!);files.delete(from!)}
   if(e.argv.join(' ').includes('command -v'))return {value:{...ran(),exitCode:1}}
   if(e.argv.at(-1)==='ls')return {value:ran(JSON.stringify({spaces:[{id:'s1',tabs:[{id:'tab1',terminals:[{terminal:'t14',pane:'p14'}]}]}]}))}
   return {value:ran('{}')}
