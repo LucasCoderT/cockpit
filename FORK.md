@@ -22,6 +22,10 @@ Claude Code sessions that run on others (runners), with cockpit's hub on each ru
 - **Notifications reach the desk.** Behind other windows, a remote desk posts a runner's notification as a system
   notification on the desk (the Cockpit notifier on macOS, `notify-send` on Linux), and a click on it
   (`cockpit focus herdr-app:<row>`) is handed to the desk's mod.
+- **One window, two hubs.** A remote desk's `cockpit.json` can list `extra` installs (`desk.sh desk <runner>
+  --with-local` adds this machine's): their agents join the runner's in the sidebar, Home, Needs and the bell, at their
+  own addresses, and an action on one goes back to its hub (`app/mods/cockpit/extra.js`). Only this machine's cockpit
+  so far, and only its agents: its `show` panes, inbox and runbook stay the runner's.
 - **`cockpit app install` keeps a remote desk's `cockpit.json`**, so updates no longer turn the desk back into a local
   install.
 - Install, update and release links point at this fork; its releases are its own.
@@ -34,7 +38,7 @@ On the runner (here `studio`) and the desk, from a checkout of this fork:
 ```sh
 sh scripts/desk.sh build              # both machines, until the fork publishes releases
 sh scripts/desk.sh runner             # on the runner: window = desk, hub on its Tailscale IP
-sh scripts/desk.sh desk studio        # on the desk: the mod, and cockpit.json pointing at studio's hub
+sh scripts/desk.sh desk studio --with-local   # on the desk: the mod, cockpit.json on studio's hub and this machine's
 ```
 
 Sessions on the runner need this fork's Claude Code plugin (its hooks relay `show`):
@@ -42,8 +46,9 @@ Sessions on the runner need this fork's Claude Code plugin (its hooks relay `sho
 
 ## Planned
 
-- One desk, several hubs (upstream #51): merge the agents, inbox and runbook of every runner and the desk's own.
-- Usage limits labelled by machine once hubs merge.
+- More of upstream #51: another runner as an extra hub (its actions through herdr-core), the desk's own `show` panes,
+  and the inbox and runbook of every hub.
+- Usage limits labelled by machine.
 - The side browser reaching a runner's dev server.
 
 ## Keeping up with upstream

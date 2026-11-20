@@ -131,6 +131,15 @@ test("a remote act runs hub act on the runner and returns its whole answer", asy
   assert.equal(f.messages.length, 0);
 });
 
+test("an act on an extra hub's agent goes to that hub, never to the runner", async t => {
+  const f = await fixture(t);
+  const routed = [];
+  f.context.cockpitExtraOwners = new Map([["app:t5", { name: "laptop", request: async (op, fields) => (routed.push([op, fields]), { note: "answered" }) }]]);
+  assert.deepEqual(JSON.parse(JSON.stringify(await f.hub.act("agents", "answer", [{ terminal: "app:t5", choice: 1 }]))), { note: "answered" });
+  assert.deepEqual(JSON.parse(JSON.stringify(routed)), [["act", { app: "agents", action: "answer", args: [{ terminal: "app:t5", choice: 1 }] }]]);
+  assert.equal(f.calls.filter(c => c[0] === "exec").length, 0, "the runner is not asked");
+});
+
 test("a remote act translates terminal handles and armed", async t => {
   const f = await fixture(t);
   await f.hub.request("act", { app:"agents", action:"seen", args:[{terminal:"app:runner/t7"}], armed:"delete-notes" });

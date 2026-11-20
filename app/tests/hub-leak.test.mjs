@@ -11,6 +11,7 @@ const FORK = {
   "./address.js": { argsToRunner: (args) => args, toRunner: (address) => address },
   "./window.js": { runWindowCommand: async () => ({ value: {} }) },
   "./herdr-app.js": { herdrApp: async () => ({ code: 1, stdout: "", stderr: "" }) },
+  "./extra.js": { configure: () => {}, readsAgents: () => false, withExtras: (open, ...a) => open(...a), owners: () => new Map() },
 };
 const linked = (imports, name) => (name === "herdr" ? { panes: () => [], ...imports.herdr } : imports[name] ?? FORK[name]);
 

@@ -34,19 +34,24 @@ function deskStatus() {
  * so its own word stays done for good; once Herdr here shows the terminal otherwise, the row rests (idle). */
 export function rowsOf(value) {
   const rows = Array.isArray(value) ? value : value?.agents ?? value?.rows ?? [];
-  if (!value?.remote) return rows;
+  // The extra hubs' agents (extra.js): this machine's own when the window reads a runner's hub, at their own addresses.
+  const extra = (Array.isArray(value?.extra) ? value.extra : []).flatMap((e) => e.rows ?? []);
+  if (!value?.remote) return extra.length ? [...rows, ...extra] : rows;
   const status = deskStatus();
-  return rows.map((r) => {
+  return [...rows.map((r) => {
     const address = `${value.remote}/${addressOf(r)}`;
     const desk = status.get(address);
     const rests = r.stage === "done" && desk !== undefined && desk !== "done";
     return { ...r, remote: value.remote, address, terminal: `app:${address}`, stage: rests ? "idle" : r.stage, unread: Boolean(r.unread) && desk === "done" };
-  });
+  }), ...extra];
 }
 
 /** The agents view's counts, its unread ones as `rowsOf` reads them on a remote desk. */
 export function countsOf(value) {
-  const counts = value?.counts ?? {};
+  const counts = { ...(value?.counts ?? {}) };
+  for (const e of Array.isArray(value?.extra) ? value.extra : []) {
+    for (const [k, n] of Object.entries(e.counts ?? {})) if (typeof n === "number") counts[k] = (typeof counts[k] === "number" ? counts[k] : 0) + n;
+  }
   return value?.remote ? { ...counts, unread: rowsOf(value).filter((r) => r.unread).length } : counts;
 }
 

@@ -91,6 +91,23 @@ test("a runner's agent stays done and unread only while this desktop's Herdr sti
   assert.equal(f.fleet.countsOf({ counts: { unread: 3 }, agents: model.agents }).unread, 3);
 });
 
+test("a remote desk lists its extra hubs' agents beside the runner's, at their own addresses, and counts them", async () => {
+  const f = await fixture();
+  const model = {
+    remote: "runner",
+    counts: { working: 1, needs_you: 0 },
+    agents: [{ address: "t7", terminal: "app:t7", stage: "working", unread: false }],
+    extra: [{ name: "laptop", counts: { working: 0, needs_you: 1 }, rows: [{ address: "t5", terminal: "app:t5", stage: "needs_you", unread: true, hub: "laptop" }] }],
+  };
+  const rows = f.fleet.rowsOf(model);
+  assert.deepEqual(JSON.parse(JSON.stringify(rows.map((r) => [r.address, r.terminal, r.remote ?? null, r.hub ?? null]))), [["runner/t7", "app:runner/t7", "runner", null], ["t5", "app:t5", null, "laptop"]]);
+  const counts = f.fleet.countsOf(model);
+  assert.equal(counts.working, 1);
+  assert.equal(counts.needs_you, 1);
+  assert.equal(counts.unread, 1, "unread as this desk reads it: the laptop's row");
+  assert.deepEqual(JSON.parse(JSON.stringify(f.fleet.rowsOf({ agents: [{ address: "t1" }], extra: model.extra }).map((r) => r.address))), ["t1", "t5"]);
+});
+
 test("an agent is titled by the hub's name for it, else Herdr's title, never by a tab label read a second way", async () => {
   const f = await fixture();
   assert.equal(f.fleet.fleet({ agents: [{ address: "t7", title: "Daily quota limiter", tab: { id: "tab7", name: "claude" } }] }, {})[0].title, "Daily quota limiter");

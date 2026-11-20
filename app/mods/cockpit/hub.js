@@ -6,6 +6,7 @@ import { exec, appHome, readTextFile, run, window as win, panes } from "herdr";
 import { argsToRunner, toRunner } from "./address.js";
 import { runWindowCommand } from "./window.js";
 import { herdrApp } from "./herdr-app.js";
+import * as extra from "./extra.js";
 
 /** Closes a socket, already closed or not: a throw here would end the subscription that is tidying up. */
 const close = (socket) => {
@@ -411,6 +412,9 @@ export async function request(op, fields = {}, cx = null) {
     return r.code === 0 ? { note: `opened ${url}`, pending: {}, refreshing: {} } : { error: r.stderr.trim() || `could not open ${url}`, pending: {} };
   }
   sign();
+  // An agent of an extra hub (extra.js) is acted on there.
+  const owner = op === "act" && fields.app === "agents" ? extra.owners().get(fields.args?.[0]?.terminal) : null;
+  if (owner) return owner.request(op, fields, cx);
   const { machine } = await install();
   if (machine) {
     if (op === "go") return focusHere(fields.target);
@@ -613,7 +617,12 @@ function beatFor(cx, state, tick) {
  *
  *   subscribe(cx, { views: ["todo"] }, (m, cx) => { this.model = m.value; cx.notify(); });
  */
-export function subscribe(cx, { views = [], docs = [], notify = false, focus = null, window: windowCommands = false }, onMessage, onState = () => {}) {
+export function subscribe(cx, opts, onMessage, onState = () => {}) {
+  // The agents view also lists what the extra hubs cockpit.json names (extra.js).
+  return extra.readsAgents(opts?.views) ? extra.withExtras(followHub, cx, opts, onMessage, onState) : followHub(cx, opts, onMessage, onState);
+}
+
+function followHub(cx, { views = [], docs = [], notify = false, focus = null, window: windowCommands = false }, onMessage, onState = () => {}) {
   // `beat` moves while the copy lives (a copy the window dropped stops beating); `port` names the hub it is on;
   // `attempt` numbers the task following the hub, `moved` is when it last got anywhere, `answered` whether the hub ever
   // answered it (live or an error).
@@ -788,3 +797,5 @@ async function windowReply(id, secret, capability, outcome) {
     if (answer.error) throw new Error(answer.error);
   } finally { close(socket); }
 }
+
+extra.configure({ install, Lines, sleep, within });
