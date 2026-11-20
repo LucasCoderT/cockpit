@@ -166,7 +166,7 @@ pub(crate) fn token() -> std::io::Result<String> {
 /// Takes the desktop protocol's port on loopback, or on COCKPIT_HUB_LISTEN's explicit interface, else the config's
 /// `hubListen` (a runner's: a hub started by any of its sessions or windows listens there too).
 fn listen() -> std::io::Result<(TcpListener, std::net::IpAddr)> {
-    let host = listen_host(std::env::var("COCKPIT_HUB_LISTEN").ok(), &cockpit_core::files::config());
+    let host = listen_host(std::env::var("COCKPIT_HUB_LISTEN").ok(), &cockpit_core::files::setting("hubListen"));
     let host: std::net::IpAddr = host.parse().map_err(|_| std::io::Error::other("COCKPIT_HUB_LISTEN must be an IP address"))?;
     if host.is_unspecified() || host.is_multicast() {
         return Err(std::io::Error::other("COCKPIT_HUB_LISTEN must name one interface, not a wildcard or multicast address"));
@@ -175,9 +175,9 @@ fn listen() -> std::io::Result<(TcpListener, std::net::IpAddr)> {
 }
 
 /// The address the hub's TCP side takes: the variable's, else the config's `hubListen`, else loopback.
-fn listen_host(var: Option<String>, config: &serde_json::Value) -> String {
+fn listen_host(var: Option<String>, configured: &serde_json::Value) -> String {
     var.filter(|v| !v.trim().is_empty())
-        .or_else(|| config["hubListen"].as_str().filter(|v| !v.trim().is_empty()).map(str::to_string))
+        .or_else(|| configured.as_str().filter(|v| !v.trim().is_empty()).map(str::to_string))
         .unwrap_or_else(|| "127.0.0.1".into())
 }
 
@@ -343,7 +343,7 @@ mod tests {
 
     #[test]
     fn a_runner_s_hub_listens_where_its_variable_else_its_config_says() {
-        let config = serde_json::json!({"hubListen": "100.64.0.10"});
+        let config = serde_json::json!("100.64.0.10");
         assert_eq!(listen_host(Some("100.64.0.11".into()), &config), "100.64.0.11");
         assert_eq!(listen_host(None, &config), "100.64.0.10");
         assert_eq!(listen_host(Some(" ".into()), &serde_json::Value::Null), "127.0.0.1");

@@ -99,6 +99,12 @@ pub fn config() -> Value {
     load(&cache().join("config.json")).or_else(|| load(&config_dir().join("config.json"))).unwrap_or(Value::Null)
 }
 
+/// One setting as the config file says it now, else as the resolved copy has it: for what a person sets by hand on a
+/// runner (`window`, `hubListen`), which the copy only takes when a session next runs.
+pub fn setting(key: &str) -> Value {
+    load(&config_dir().join("config.json")).map(|c| c[key].clone()).filter(|v| !v.is_null()).unwrap_or_else(|| config()[key].clone())
+}
+
 /// Fires once per change to anything in these folders; the watcher stops when dropped.
 pub fn watch(dirs: &[PathBuf]) -> (Option<RecommendedWatcher>, Receiver<()>) {
     let (tx, rx) = channel();
