@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { forgetFacts, reportFacts, transcriptPath } from '../hooks/facts'
-import { exportAppPane, findTerminal, frontendOf, herdrHere } from '../hooks/herdr'
+import { appCall, exportAppPane, findTerminal, frontendOf, herdrHere } from '../hooks/herdr'
 import type { AppSpace } from '../hooks/herdr'
 import { isBrowserTerminal } from '../hooks/sidebar'
 
@@ -121,3 +121,24 @@ test('facts reach the agents document under the handle, once per change, and go 
 test("a conversation's transcript is in Claude's folder for its working directory", async () => {
   expect(transcriptPath('/home/me', '/repos/my_api.v2', 'abc')).toBe('/home/me/.claude/projects/-repos-my-api-v2/abc.jsonl')
 })
+
+test('appCall falls back to cockpit window when herdr-app is missing', async () => {
+  const f = fake({ HC_TERMINAL_ID:'t3' });
+  const calls: string[][] = [];
+  f.$.process.run = async (argv: string[]) => {
+    calls.push(argv);
+    if (argv.join(' ').includes('command -v')) return ran(1);
+    return ran(0, JSON.stringify({spaces:SPACES}));
+  };
+  expect(await appCall(f.$,['ls'])).toEqual({value:{spaces:SPACES}});
+  expect(calls.at(-1)?.slice(-2)).toEqual(['window','ls']);
+  expect((await herdrHere(f.$))?.pane).toBe('app:t3');
+});
+
+test('appCall maps exit 3 and 4 to no_window and may_have_run', async () => {
+  for (const [code,kind] of [[3,'no_window'],[4,'may_have_run']] as const) {
+    const f=fake({HC_TERMINAL_ID:'t3'});
+    f.$.process.run=async argv => argv.join(' ').includes('command -v') ? ran(1) : {...ran(code),stderr:'window unavailable'};
+    expect(await appCall(f.$,['status'])).toEqual({error:'window unavailable',kind});
+  }
+});

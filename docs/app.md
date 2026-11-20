@@ -111,7 +111,7 @@ copy's are.
 back to Herdr's `agents()`. Only the app's main view sets `focus`; count
 subscriptions leave it out, so they cannot consume a pending remote-desk navigation.
 
-## A remote desk (preview)
+## A remote desk
 
 The Herdr app can read a Linux or macOS runner's hub, including from Windows. Both ends need this version of the
 cockpit mod/hub. Connect the runner through Herdr's machine settings first, then put the cockpit layout and mod in
@@ -150,23 +150,31 @@ only while the desktop's Herdr still shows it done: the runner never learns whic
 the desktop cannot tell it. Runner agents are not joined to local
 terminals or tabs with matching IDs.
 
-The review panel works on a runner agent: focus it (Go from the agents list) and the panel reads its folder, a runner
-path, over TCP. Its three actions, `review send`, `review walkthrough` and `review stop_walkthrough`, travel as
-`cockpit hub act review <action> <JSON args>` run on the runner through Herdr's machine connection, the way `hub start`
-does; that command checks the arguments and hands the action to the runner's hub on its unix socket. Comments go only to
-an agent of the runner (`runner/t7` reaches the runner as `t7`).
-
-The runbook's step actions travel the same way, as `cockpit hub act runbook <action> <JSON args> [armed]`: `done`, `set`
-(edit a cell or the status), `add`, `undo` and `run_step`. Run still asks first, and its confirm key goes along as
-`armed`. Copy writes the desk's clipboard and never calls the hub. Every other action (refresh, talk, delete, open the
-session or the PR) and Archive stay unavailable in this preview.
+Every app action, including runbook steps, to-do changes and confirmations, travels as
+`cockpit hub act <app> <action> <JSON args> [--armed <token>]` over Herdr's machine connection. That command
+hands it to the runner's hub on its unix socket and returns the full action response. Only address-bearing fields and the terminal positions of review/queue actions are translated; ordinary text and paths are preserved. Terminal handles retain
+`app:`: `app:runner/t7` reaches the hub as `app:t7`, while raw `runner/t7` reaches it as `t7`. Addresses of
+another machine are refused. Navigation and links open on the desktop. The runbook's Copy writes the desk's clipboard
+and never calls the hub.
 
 TCP has no TLS: use an encrypted private network such as Tailscale, and keep `hub.json` private. A hub listening
 off loopback answers reads only, whoever holds the token; the mod keeps the same list so a remote desk says so
 without asking. That holds for the runner's own window too, so leave `COCKPIT_HUB_LISTEN` unset on a machine whose
 desktop writes. On loopback, the token is a file the same user can read, so any process of theirs that reads it can
 act as the window: the hub tells processes apart on its unix socket only, where it refuses permission answers from an
-agent's own process tree (see `answer` under View `agents`).
+agent's own process tree (see `answer` under View `agents`). A remote desk's actions do not go over TCP: they run
+`cockpit hub act` on the runner through Herdr's shell connection, which hands them to the hub on its unix socket.
+
+The sidebar subscription also receives commands for the desktop window. It fetches a separate window secret with
+`cockpit hub window-token` through Herdr's shell connection and uses it in `subscribe {window:true}` and
+`window_reply`. The hub keeps this secret only in memory; a restarted hub causes the mod to fetch it again.
+The latest connected window handles commands, each with a ten second deadline. Timed-out commands are never retried.
+
+Server item navigation carries its full target through an authenticated `cockpit.focus` window command. The desktop accepts navigation (including owned `tab.select`), cockpit panel splits, renames and closes only for targets belonging to the runner;
+layout and cockpit panel commands operate on this cockpit window. `space.new` forces the runner machine.
+`terminal.open`, `tab.new` and splits with `argv` are refused until this desktop API's machine support can be
+verified. Text paste uses the desktop clipboard and restores its previous text. The only extra operation allowed
+over read-only TCP is `window_reply`, authenticated with the window secret and a live pending command id plus an unpredictable per-request capability sent only to the selected window. A different authorized window cannot answer that command.
 
 Desktop checks: `node --experimental-vm-modules --test app/tests/*.test.mjs`.
 
@@ -174,13 +182,14 @@ Desktop checks: `node --experimental-vm-modules --test app/tests/*.test.mjs`.
 
 - Keys (`app/keys.json`, sections `layout:cockpit` and `layout:cockpit-chat`): `cmd-shift-p` → `cockpit.palette`
   (cockpit's palette, a superset of Herdr's), `cmd-/` → `cockpit.keys` (the keys sheet), `cmd-alt-1..7` →
-  `cockpit.go:<inbox|runbook|todo|meetings|monitor|routines|mail>`. A `cockpit.<command>` reaches every shown copy's
+  `cockpit.go:<inbox|runbook|todo|meetings|monitor|routines|mail>`, and in Cockpit `cmd-alt-8` → `cockpit.go:aq`. A `cockpit.<command>` reaches every shown copy's
   `command()` (a hidden one, such as a sidebar ⌘B closed or a screen behind another, hears nothing); prefix your own
   with your view's name (`todo:delete:<key>`).
 - The window's commands live in `commands.js` and run in the one copy each layout always shows, its *runner*
   (`RUNNER`): `status` in Cockpit, `chat-top` in Cockpit Chat, each through `runCommand(c, cx, layout)`, which acts only
   while its layout (or a copy of it, such as `cockpit-chat-copy`) is shown. Both layouts: `palette`, `keys`,
-  `recap[:<tab>]`, `next-waiting`, `next:blocked|done`, `panel[:<child>]`, `doc:<name>`, `go:<screen>` (a screen the
+  `recap[:<tab>]`, `next-waiting`, `next:blocked|done`, `panel[:<child>]`, `panel-open:<child>[:<view>]` (shown, never
+  toggled away), `doc:<name>`, `go:<screen>` (a screen the
   layout has, or `work`: where you deal with an agent), `via:<screen>|<command>` (shows that screen, then hands its
   view the command), `pr`, `ticket`, `resume`, `link:<url>`, `target:<row>`, `update`, `kit[:<tab>]`,
   `code:open:<path>`; Cockpit only `home` and `agent-view`; Cockpit Chat only `sidebar`, `new`, `terminal` (⌃`: the
@@ -1546,6 +1555,44 @@ through the hub's mail server at once (the mapping's `get` verb, `thread`/`html`
 request a Claude Code session carries out (`plugin/hooks/mail.ts`); `mail_reply` starts an agent in the actions space
 that drafts a reply and sends nothing; `mail_archive`, `mail_read`, `mail_open`; `request_refresh`. A notification about a
 new message leads to `mail:<id>`: the mail space, that message open.
+
+## Views `aq` and `aq-log` (the aq space, app only)
+
+aq is a local queue for the heavy commands agents run (test suites, builds, docker stands): it starts each when memory
+is free and keeps a dashboard snapshot, `dashboard.json`, in its runtime folder (`AQ_RUNTIME_DIR`, else
+`$XDG_RUNTIME_DIR/agent-queue`), rewritten whenever the queue changes and at least every 30 seconds. `cockpit_aq::gui`
+reads that file, else `aq dashboard --json`, and rebuilds when the folder changes and every 20 seconds, so a snapshot a
+dead daemon left behind (older than 60 seconds) reads as down. The space has no TUI half and no place in the config's
+`spaces`: its sidebar icon and Home line show wherever the hub finds aq on its machine.
+
+```jsonc
+{
+  "state": "live" | "down" | "absent", "error": "…",          // down: why; absent: no aq, the space and line hide
+  "line": {"text": "3 running · 2 queued · 1 held · 17/27 GiB", "tone": "destructive" | "warning" | null},
+  "badge": {"count": 2, "tone": "destructive"},              // failed in the last hour, else waiting long, else "!"; null when all is well
+  "pool": {"text": "17.0 / 27.0 GiB", "ratio": 0.63, "cpus_text": "9 / 16 CPU", "cpus_ratio": 0.56},
+  "host": {"text": "10.8 / 31.1 GiB", "ratio": 0.35, "pressure_closed": false, "guard_cutting": false,
+           "guard_ceiling": "22.5 GiB"},                       // guard_ceiling: null before the guard first writes one
+  "head": "the queue waits on memory: …", "counts": {"running": 3, "queued": 2, "reservations": 1, "recent": 5},
+  "running": [Item], "queued": [Item], "reservations": [Item], "recent": [Item],
+  "day": {"text": "27/31 ok", "failed": 3, "oom": 1, "wait_median": "0s", "run_total": "1h 30m", …}
+}
+// Item: {id, short, name, kind, state, phase: "running" | "queued" | "held" | "done", project, path, agent, session,
+//        within, cpus, mem: {text, ratio, high}, acts: ["logs" | "result" | "cancel" | "extend" | "release"], …}
+// running: time, timeout · queued: position, blocked, expected, waited, late · held: ttl, expiring, budget, docker,
+// tasks: [Item] · done: outcome, words, tone, exit_code, diagnostic, took, ended, peak
+```
+
+The line turns red when a task failed, ran out of memory or timed out in the last hour, and yellow while aq closed
+admission on memory pressure, its host guard cuts aq's slice below what aq promised running work, or an item has waited
+over five minutes. A guard ceiling alone is no warning: the pool tile shows it as a number. Memory reads in tenths of a
+GiB (MiB below one) and times to the minute, so the model moves only when something you would see does.
+
+`aq-log {id, stream: "stdout" | "stderr" | "result", tail}` is one item's output (`aq logs`) or how it ended
+(`aq result`), as `{id, stream, text, error}`. Actions (`act("aq", action, [id, ttl?])`): `cancel`, `extend` (30m by
+default) and `release`, run as the aq commands of those names; ids must be aq's hex-and-dash ids. A remote desk reads the
+runner's queue and logs; the buttons that change it show only on the machine aq runs on. An item goes to its agent by
+its `session`, matched against the `agents` view's rows.
 
 ## Views `routines` and `routines-when` (the routines space, both halves)
 

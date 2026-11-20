@@ -7,6 +7,8 @@ import { div, image, PathBuilder } from "gpui-kit";
 import { h_flex, v_flex, v_virtual_list, Scrollbar, InputState, Input, TextView } from "gpui-base";
 import { exec, appHome, focused, panes, run, layout, shared, setShared, props, settings, window as win } from "herdr";
 import * as hub from "./hub.js";
+import { toRunner } from "./address.js";
+import { UpdateBadge, panelVisible } from "./updates.js";
 import { take } from "./person.js";
 import { layoutName, frontAgent, CHAT_SUBJECT } from "./screens.js";
 import { tokens, alpha, TEXT, RADIUS, Icon, Badge, Button, Kbd, ChoiceKey, Empty, Toaster, Progress, Spinner, openMenu, dur } from "./ui.js";
@@ -105,7 +107,16 @@ export default class Show {
       const text = this.other.value().trim();
       if (n !== null && text) this.answer(cx, n, "choice", text, text);
     });
-    this.subscribe(cx);
+    // Which runner this desk shows, if any: Documents subscribe once it is known.
+    this.machine = undefined;
+    this.findingMachine = true;
+    cx.spawn(async cx => {
+      this.machine = (await hub.install().catch(()=>({}))).machine ?? null;
+      this.findingMachine = false;
+      this.subscribe(cx);
+      cx.notify();
+    });
+    cx.timer.every(1000, (cx) => this.tick(cx));
     if (this.name) {
       // A pane split from the agent's is focused for a moment: that is how this copy learns which pane it is.
       const learn = () => {
@@ -133,12 +144,25 @@ export default class Show {
   }
 
   subscribe(cx) {
+    if (this.findingMachine) return;
     try {
       if (this.panel) localStorage.setItem("show.pick", this.pick ?? "");
     } catch {}
     this.sub?.stop();
-    const args = this.name ? { name: this.name } : { terminal: this.terminal ?? "", pick: this.pick };
+    this.sub = null;
     const subscription = this.subscription = (this.subscription ?? 0) + 1;
+    let args;
+    try {
+      args = this.name ? { name: this.name } : { terminal: this.terminal ? toRunner(this.terminal, this.machine) : "", pick: this.pick };
+    } catch(error) {
+      this.data = null;
+      this.pick = null;
+      this.pendingGo = null;
+      this.status = `error: ${error?.message ?? error}`;
+      this.updateBadge(true);
+      cx.notify?.();
+      return;
+    }
     this.sub = hub.subscribe(
       cx,
       { views: [{ name: "show", args }], focus: this.panel ? "show" : null },
@@ -156,9 +180,28 @@ export default class Show {
     );
   }
 
+  updateBadge(modelChanged = false) {
+    if (!this.panel) return;
+    const visible = panelVisible(layout(),"show");
+    if (!modelChanged && this.badgeVisible === visible) return;
+    this.badgeVisible = visible;
+    this.updates ??= new UpdateBadge();
+    if (modelChanged) {
+      this.badgeEntries = new Map((this.data?.views ?? []).map(v=>[v.name,String(v.revision ?? v.at)]));
+      const view = this.data?.view;
+      if (view && !(this.data?.views ?? []).find(v=>v.name===view.name)?.revision) this.badgeEntries.set(view.name,JSON.stringify(view));
+      this.badgeAsks = (this.data?.views ?? []).reduce((n,v)=>n+(v.asks ?? 0),0);
+    }
+    const changed = this.updates.take(this.badgeEntries ?? [],visible);
+    const asks = this.badgeAsks ?? 0;
+    const badge = changed+asks ? {count:changed+asks,tone:asks?"warning":"info"} : null;
+    if (JSON.stringify(shared("badge.show") ?? null)!==JSON.stringify(badge)) setShared("badge.show",badge);
+  }
+
   take(value, cx) {
     const before = this.data?.view;
     this.data = value;
+    this.updateBadge(true);
     const view = value?.view;
     if (!view) return;
     if (!before || before.name !== view.name || before.at !== view.at) {
@@ -175,11 +218,6 @@ export default class Show {
     for (const b of view.blocks) {
       if (b.type === "image" && b.src) this.ensure(b.src, cx);
       if (b.type === "compare") [b.before, b.after].forEach((s) => s && this.ensure(s, cx));
-    }
-    if (this.panel) {
-      const asks = (value.views ?? []).reduce((n, v) => n + (v.asks ?? 0), 0);
-      const badge = asks ? { count: asks, tone: "warning" } : null;
-      if (JSON.stringify(shared("badge.show") ?? null) !== JSON.stringify(badge)) setShared("badge.show", badge);
     }
   }
 
@@ -253,6 +291,10 @@ export default class Show {
   /** A picture copied into the app's folder (it draws pictures only from there), with its size. */
   ensure(pic, cx) {
     if (!pic?.key || this.images.has(pic.key)) return;
+    if (this.machine && !pic.remote) {
+      this.images.set(pic.key,{state:"failed",error:`Image on ${this.machine}: ${pic.src}`});
+      return;
+    }
     this.images.set(pic.key, { state: "loading" });
     const rel = `data/cockpit/show/${pic.key}`;
     const fetch = pic.remote ? 'curl -fsSL --max-time 20 -o "$1" "$2"' : 'cp "$2" "$1"';
@@ -590,6 +632,7 @@ export default class Show {
   }
 
   render(cx) {
+    this.updateBadge();
     const k = tokens();
     this.follow(cx);
     const view = this.view();

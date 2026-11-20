@@ -9,9 +9,10 @@
 
 import { div } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState, InputState, TextView, h_resizable, resizable_panel } from "gpui-base";
-import { exec, readTextFile, writeTextFile, watchFolder, theme, settings, props, run, panes, home, shared, setShared, appHome, focused, layout } from "herdr";
+import { exec, readTextFile, writeTextFile, watchFolder, theme, settings, props, run, panes, home, shared, setShared, focused, layout } from "herdr";
 import * as hub from "./hub.js";
 import { take } from "./person.js";
+import { herdrApp } from "./herdr-app.js";
 import { tokens, TEXT, Icon, Button, Kbd, TextField, Toaster } from "./ui.js";
 import { layoutName, CHAT_SUBJECT } from "./screens.js";
 import { lent, panelOpen } from "./commands.js";
@@ -52,7 +53,7 @@ export async function openCode(file, { terminal, line } = {}) {
   if (open && all.some((p) => p.pane === open)) run("pane.close", { pane: open });
   const args = { direction: "right", ...(beside ? { pane: beside.pane } : {}), mod: "cockpit", props: { app: "code", file, line, terminal: terminal ?? beside?.terminal, tab } };
   // Through herdr-app, which answers with the new pane: run() gives nothing back.
-  const r = await exec("env", [`HERDR_APP_HOME=${appHome()}`, `${home()}/.local/bin/herdr-app`, "do", "pane.split", JSON.stringify(args)]).catch(() => null);
+  const r = await herdrApp(["do", "pane.split", JSON.stringify(args)]).catch(() => null);
   const made = r?.code === 0 ? JSON.parse(r.stdout || "{}").pane : null;
   if (!made) run("pane.split", args);
   else if (tab) setShared(SHOWN, { ...(shared(SHOWN) ?? {}), [tab]: made });

@@ -19,6 +19,7 @@ fn space_of(app: &str) -> Option<&'static str> {
         "monitor" => Some("monitor"),
         "routines" => Some("routines"),
         "mail" => Some("mail"),
+        "aq" => Some("aq"),
         _ => None,
     }
 }
@@ -30,9 +31,18 @@ pub fn go(target: &Value) -> Value {
     if app == "session" {
         return session(target);
     }
+    if frontend::current() == frontend::Frontend::App && !frontend::local_app() {
+        return match crate::window::call("do", "cockpit.focus", &json!({"target":target}), std::time::Duration::from_secs(10)) {
+            Ok(_) => json!({"ok":true}),
+            Err(error) => json!({"error":error.to_string(),"kind":error.kind()}),
+        };
+    }
     // The app comes into view first, so the view that brings the item into view is there to hear it.
     if let Some(space) = space_of(app) {
-        frontend::show_app(if app == "to-do" { "todo" } else { app }, space);
+        let shown = frontend::show_app(if app == "to-do" { "todo" } else { app }, space);
+        if !shown && frontend::current() == frontend::Frontend::App {
+            return json!({"error":"the local Herdr window did not answer","kind":"failed"});
+        }
     }
     focus::request(app, target);
     crate::views::focus(app, target);

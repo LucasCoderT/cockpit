@@ -535,6 +535,12 @@ const WINDOW = {
   "next:done": next("done"),
   panel: () => togglePanel(null),
   "panel:": (name) => togglePanel(name),
+  // `panel-open:<panel>[:<view>]`: the panel shown, never toggled away, and a Documents view picked in it.
+  "panel-open:": (arg) => {
+    const [name, ...key] = arg.split(":");
+    openPanel(name);
+    if (name === "show" && key.length) hub.focusHere({ app: "show", key: key.join(":") });
+  },
   "doc:": (name, _cx, ctx) => {
     openPanel("show");
     run(ctx.person ? keyed(`cockpit.show:go:${name}`) : `cockpit.show:go:${name}`);
@@ -603,6 +609,7 @@ function argOk(name, arg, layout) {
   if (name === "go:") return arg === "work" || hasScreen(layout, arg);
   if (name === "via:") return arg.includes("|") && hasScreen(layout, arg.slice(0, arg.indexOf("|")));
   if (name === "panel:") return has(PANELS, arg);
+  if (name === "panel-open:") return has(PANELS, arg.split(":")[0]);
   return true;
 }
 

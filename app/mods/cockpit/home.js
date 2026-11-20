@@ -10,7 +10,7 @@ import { show } from "./sidebar.js";
 import { findNode } from "./status.js";
 import * as hub from "./hub.js";
 import { sharing } from "./feed.js";
-import { fleet, goToAgent, agentAct, refuseRemoteAgent, answerPayload, changed, CHANGED } from "./fleet.js";
+import { fleet, goToAgent, agentAct, refuseRemoteAgent, desktopTab, answerPayload, changed, CHANGED } from "./fleet.js";
 import { inFront } from "./front.js";
 import { AllowsBlock, confirmUnasked, takeConfirm, unaskedChoice, pinsNow, togglePinOf, dismissable } from "./agentsui.js";
 import { showWork, layoutName } from "./screens.js";
@@ -65,6 +65,7 @@ const OVERVIEW = [
     // The run that needs a look, else the routines.
     open: (v) => (v.look?.length ? hub.go({ app: "routines", key: v.look[0].key }).catch(() => {}) : show("routines")),
   },
+  { view: "aq", space: "aq", label: "aq", icon: "cpu", line: (v) => v.line ?? null },
 ];
 
 const COLUMNS = [
@@ -177,7 +178,7 @@ export default class Home {
     const settled = new Set(spaces().flatMap((s) => s.tabs.filter((t) => t.settled).map((t) => t.id)));
     const branches = new Set(agents.filter((a) => a.branch).map((a) => `${a.repo ?? ""}/${a.branch}`));
     const covered = (pr) => branches.has(`${pr.repo}/${pr.branch}`) || agents.some((a) => a.branch && a.branch === pr.branch);
-    const agentCard = (a) => ({ kind: "agent", key: `a:${a.address}`, stage: a.stage, project: a.repo ?? a.space_name, agent: a, archived: !a.remote && settled.has(a.tab) });
+    const agentCard = (a) => ({ kind: "agent", key: `a:${a.address}`, stage: a.stage, project: a.repo ?? a.space_name, agent: a, archived: settled.has(desktopTab(a)) });
     const prCard = (pr, stage) => ({ kind: "pr", key: `p:${pr.url}`, stage, project: pr.repo, pr, agent: agents.find((a) => a.branch && a.branch === pr.branch) ?? null });
     const all = [
       ...agents.map(agentCard),
@@ -347,14 +348,15 @@ export default class Home {
 
   archive(cx, a) {
     if (refuseRemoteAgent(a)) return;
-    run("tab.settle", { id: a.tab });
-    this.toasts.push(cx, `Archived ${a.title}`, { kind: "success", description: "Its tab keeps running, folded away.", action: { label: "Undo", onClick: () => run("tab.unsettle", { id: a.tab }) } });
+    const tab = desktopTab(a);
+    run("tab.settle", { id: tab });
+    this.toasts.push(cx, `Archived ${a.title}`, { kind: "success", description: "Its tab keeps running, folded away.", action: { label: "Undo", onClick: () => run("tab.unsettle", { id: tab }) } });
   }
 
   archiveAll(cx, cards) {
-    const remote = cards.find(c => c.agent?.remote);
+    const remote = cards.find(c => !c.archived && c.agent?.remote && !desktopTab(c.agent));
     if (remote && refuseRemoteAgent(remote.agent)) return;
-    const tabs = [...new Set(cards.filter((c) => c.agent && !c.archived).map((c) => c.agent.tab))];
+    const tabs = [...new Set(cards.filter((c) => c.agent && !c.archived).map((c) => desktopTab(c.agent)))];
     for (const id of tabs) run("tab.settle", { id });
     this.toasts.push(cx, `Archived ${plural(tabs.length, "agent")}`, { kind: "success", action: { label: "Undo", onClick: () => tabs.forEach((id) => run("tab.unsettle", { id })) } });
   }
@@ -912,7 +914,7 @@ export default class Home {
     // Meetings have their own card above, unless the calendar fails to read.
     // Mail shows wherever it is set up, pinned or not.
     const calendarFails = Boolean(failing(this.apps.meetings?.sources, Date.now()));
-    const items = OVERVIEW.filter((o) => (o.view !== "meetings" || calendarFails) && ((this.pinned ?? DEFAULT_PINNED).includes(o.space) || (o.view === "mail" && this.apps.mail?.enabled)))
+    const items = OVERVIEW.filter((o) => (o.view !== "meetings" || calendarFails) && ((this.pinned ?? DEFAULT_PINNED).includes(o.space) || (o.view === "mail" && this.apps.mail?.enabled) || o.view === "aq"))
       // The app's own line first; a failing source under it, as its numbers may be old.
       .map((o) => ({ ...o, line: this.apps[o.view] ? o.line(this.apps[o.view]) : null, source: this.apps[o.view] ? sourceLine(o, this.apps[o.view]) : null }))
       .filter((o) => o.line || o.source);

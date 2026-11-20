@@ -26,6 +26,10 @@ async function fixture(t, remote = true, globals = {}, host = "127.0.0.1") {
         messages.push(request);
         if (behavior.silent) continue;
         if (request.token !== behavior.token) socket.end('{"error":"a request on TCP needs hub.json\'s token"}\n');
+        else if (request.op === "subscribe" && request.window && behavior.refuseWindow > 0) {
+          behavior.refuseWindow--; socket.end('{"error":"this window secret is not the hub\'s: ask again"}\n');
+        }
+        else if (request.op === "window_reply" && behavior.replyError) socket.write(JSON.stringify({error:behavior.replyError}) + "\n");
         else if (request.op === "subscribe") socket.write(JSON.stringify({ view: typeof request.views[0] === "string" ? request.views[0] : request.views[0].name, value: { tickets: behavior.tickets } }) + "\n");
         else socket.write(JSON.stringify(request.op === "ping" ? { ok: true } : { value: { tickets: behavior.tickets } }) + "\n");
       }
@@ -40,6 +44,8 @@ async function fixture(t, remote = true, globals = {}, host = "127.0.0.1") {
   const imports = {
     herdr: {
       appHome: () => "C:/Herdr",
+      home: () => "C:/Users/Sam",
+      panes: () => [],
       window: () => ({ platform: "windows", active: true }),
       run: (...args) => calls.push(["run", ...args]),
       readTextFile: async (path, options) => {
@@ -53,7 +59,7 @@ async function fixture(t, remote = true, globals = {}, host = "127.0.0.1") {
       exec: async (...args) => {
         calls.push(["exec", ...args]);
         if (behavior.startHangs && args[1]?.includes?.("start")) return new Promise(() => {});
-        return behavior.exec ?? { code: 0, stdout: JSON.stringify({ ...info, token: behavior.token }), stderr: "" }; },
+        return (typeof behavior.exec === "function" ? behavior.exec(...args) : behavior.exec) ?? { code: 0, stdout: JSON.stringify({ ...info, token: behavior.token }), stderr: "" }; },
     },
     net: { default: { connect: async (host, port) => {
       if (behavior.hangs > 0) {
@@ -78,9 +84,18 @@ async function fixture(t, remote = true, globals = {}, host = "127.0.0.1") {
     } } },
   };
   const module = new SourceTextModule(await readFile(new URL("../mods/cockpit/hub.js", import.meta.url), "utf8"), { context });
-  await module.link(name => new SyntheticModule(Object.keys(imports[name]), function () {
-    for (const [key, value] of Object.entries(imports[name])) this.setExport(key, value);
-  }, { context }));
+  const modules = new Map();
+  async function load(name) {
+    if (modules.has(name)) return modules.get(name);
+    const values = imports[name];
+    const child = values ? new SyntheticModule(Object.keys(values), function () {
+      for (const [key,value] of Object.entries(values)) this.setExport(key,value);
+    }, {context}) : new SourceTextModule(await readFile(new URL(`../mods/cockpit/${name.replace(/^\.\//, "")}`, import.meta.url), "utf8"), {context,identifier:name});
+    modules.set(name,child);
+    if (!values) await child.link(load);
+    return child;
+  }
+  await module.link(load);
   await module.evaluate();
   return { hub: module.namespace, calls, info, install, messages, clients, behavior, server, host, context, imports };
 }
@@ -105,16 +120,28 @@ for (const [name, globals] of [["TextDecoder", { TextDecoder }], ["the percent f
   await Promise.all(r.tasks);
 });
 
-test("remote actions and commands cannot operate the runner's desktop", async t => {
+test("a remote act runs hub act on the runner and returns its whole answer", async t => {
   const f = await fixture(t);
-  await assert.rejects(f.hub.act("inbox", "review", [{}]), /read-only/);
-  await assert.rejects(f.hub.cockpit(["resume", "all"]), /read-only/);
-  await assert.rejects(f.hub.act("review", "open_reviewr", ["/runner/acme/api"]), /read-only/);
-  await assert.rejects(f.hub.cockpit(["hub", "act", "inbox", "review", "[]"]), /read-only/);
-  await assert.rejects(f.hub.cockpit(["hub", "act", "review", "send"]), /read-only/);
-  await assert.rejects(f.hub.go({ app: "session", key: "past" }), /read-only/);
+  const answer = { note: "done", pending: { runbook: true }, refreshing: {}, error: null };
+  f.behavior.exec = { code: 0, stdout: JSON.stringify(answer), stderr: "" };
+  assert.deepEqual(JSON.parse(JSON.stringify(await f.hub.act("runbook", "done", [["eng-412", "2"]]))), answer);
+  const call = f.calls.find(c => c[0] === "exec");
+  assert.equal(call[3].on, "runner");
+  assert.deepEqual(Array.from(call[2].slice(-5)), ["hub","act","runbook","done",'[["eng-412","2"]]']);
   assert.equal(f.messages.length, 0);
-  assert.equal(f.calls.filter(call => call[0] === "exec").length, 0);
+});
+
+test("a remote act translates terminal handles and armed", async t => {
+  const f = await fixture(t);
+  await f.hub.request("act", { app:"agents", action:"seen", args:[{terminal:"app:runner/t7"}], armed:"delete-notes" });
+  const args = f.calls.find(c => c[0] === "exec")[2];
+  assert.deepEqual(Array.from(args.slice(-3)), ['[{"terminal":"app:t7"}]',"--armed","delete-notes"]);
+});
+
+test("another machine's agent is refused before exec", async t => {
+  const f = await fixture(t);
+  await assert.rejects(f.hub.act("agents","seen",[{terminal:"app:other/t7"}]), /another machine/);
+  assert.equal(f.calls.filter(c => c[0] === "exec").length, 0);
 });
 
 test("remote review actions run as a cockpit command on the runner, through its machine connection", async t => {
@@ -132,28 +159,6 @@ test("remote review actions run as a cockpit command on the runner, through its 
   assert.equal(f.messages.length, 0, "no write travels over TCP");
 });
 
-test("remote runbook edits and runs go to the runner with their armed key, and nothing else of the runbook does", async t => {
-  const f = await fixture(t);
-  const step = { n: "2", step: "Deploy", where: "prod", status: "to do", command: "make deploy" };
-  await f.hub.act("runbook", "done", [[["eng-412", "2"]]]);
-  await f.hub.act("runbook", "set", ["eng-412", "2", "command", "make ship"]);
-  await f.hub.act("runbook", "add", ["eng-412", null, "Smoke", "prod", "make smoke"]);
-  await f.hub.act("runbook", "undo", []);
-  await f.hub.request("act", { app: "runbook", action: "run_step", args: [{ $book: "eng-412" }, step], armed: "run-eng-412-2" });
-  const runs = f.calls.filter(call => call[0] === "exec").map(([, , args]) => JSON.parse(JSON.stringify(args.slice(args.indexOf("/runner/cockpit") + 1))));
-  assert.deepEqual(runs, [
-    ["hub", "act", "runbook", "done", '[[["eng-412","2"]]]'],
-    ["hub", "act", "runbook", "set", '["eng-412","2","command","make ship"]'],
-    ["hub", "act", "runbook", "add", '["eng-412",null,"Smoke","prod","make smoke"]'],
-    ["hub", "act", "runbook", "undo", "[]"],
-    ["hub", "act", "runbook", "run_step", JSON.stringify([{ $book: "eng-412" }, step]), "run-eng-412-2"],
-  ]);
-  assert.equal(f.messages.length, 0, "no write travels over TCP");
-  for (const action of ["delete", "update", "talk", "focus_session", "open_pr"]) await assert.rejects(f.hub.act("runbook", action, [{ $book: "eng-412" }]), /read-only/);
-  await assert.rejects(f.hub.cockpit(["hub", "act", "runbook", "delete", "[]"]), /read-only/);
-  assert.equal(f.calls.filter(call => call[0] === "exec").length, runs.length);
-});
-
 test("Copy on a remote desk writes the clipboard and never calls the hub", async t => {
   const f = await fixture(t);
   const source = (await readFile(new URL("../mods/cockpit/runbook.js", import.meta.url), "utf8"));
@@ -164,7 +169,9 @@ test("Copy on a remote desk writes the clipboard and never calls the hub", async
     "./ui.js": { ...Object.fromEntries([...source.matchAll(/import \{([^}]*)\} from "\.\/ui\.js"/g)].flatMap(m => m[1].split(",")).map(n => n.trim()).filter(Boolean).map(n => [n, stubs[n]])), Toaster: class { push(_cx, text) { toasts.push(text); } } },
     "gpui-kit": { div: stubs.div },
     "gpui-base": { h_flex: stubs.h_flex, v_flex: stubs.v_flex, InputState: stubs.InputState },
-    herdr: { props: () => ({}), focused: () => null, panes: () => [], shared: () => ({}), settings: () => ({}) },
+    herdr: { props: () => ({}), focused: () => null, panes: () => [], shared: () => ({}), settings: () => ({}), setShared: () => {}, layout: () => ({}) },
+    "./address.js": { toRunner: (address) => address },
+    "./updates.js": { UpdateBadge: stubs.UpdateBadge, panelVisible: () => true },
   };
   // Every other module it imports by name is stubbed whole: the copy needs none of them.
   for (const m of source.matchAll(/import\s*\{([^}]*)\}\s*from\s*"(\.\/[^"]+)"/g)) {
@@ -185,9 +192,9 @@ test("Copy on a remote desk writes the clipboard and never calls the hub", async
   assert.equal(f.calls.filter(call => call[0] === "exec").length, 0);
 });
 
-test("a remote review goes only to one of the runner's agents", async t => {
+test("a remote review refuses another machine's terminal", async t => {
   const f = await fixture(t);
-  for (const terminal of ["t7", "app:t7", "laptop/t7", "runner/laptop/t7", "runner/", ""]) await assert.rejects(f.hub.act("review", "send", [terminal, { comments: [] }]), /runner's agents/);
+  await assert.rejects(f.hub.act("review", "send", ["laptop/t7", { comments: [] }]), /another machine/);
   assert.equal(f.calls.filter(call => call[0] === "exec").length, 0);
 });
 
@@ -420,6 +427,67 @@ test("a notification that needs the runner's own terminals says so", async t => 
   const f = await fixture(t);
   await assert.rejects(f.hub.cockpit(["focus", "herdr-app:workspace:s1"]), /read-only/);
   await assert.rejects(f.hub.cockpit(["focus", "herdr-app:resume"]), /read-only/);
+});
+
+test("a remote window subscription asks for the window secret first", async t => {
+  const f=await fixture(t), r=runtime(t);
+  f.behavior.exec={code:0,stdout:'{"secret":"window-secret"}',stderr:""};
+  const sub=f.hub.subscribe(r.cx,{views:["inbox"],notify:true,window:true},r.message,r.state);
+  t.after(()=>sub.stop()); await until(()=>r.received.length===1);
+  assert.ok(f.calls.find(c=>c[0]==="exec"&&c[2].includes("window-token")));
+  assert.equal(f.messages.find(m=>m.op==="subscribe").window_secret,"window-secret");
+  sub.stop(); await Promise.all(r.tasks);
+});
+
+
+test("a refused window secret is asked again and the subscription retried", async t => {
+  const f=await fixture(t), r=runtime(t);
+  f.behavior.refuseWindow=1;
+  f.behavior.exec={code:0,stdout:'{"secret":"new-window-secret"}',stderr:""};
+  const sub=f.hub.subscribe(r.cx,{views:["inbox"],notify:true,window:true},r.message,r.state);
+  t.after(()=>sub.stop()); await until(()=>r.received.length===1);
+  assert.equal(f.calls.filter(c=>c[0]==="exec"&&c[2].includes("window-token")).length,2);
+  assert.equal(f.messages.filter(m=>m.op==="subscribe").length,2);
+  sub.stop(); await Promise.all(r.tasks);
+});
+
+test("a window command line gets a window_reply with the secret", async t => {
+  const f=await fixture(t), r=runtime(t);
+  f.behavior.exec={code:0,stdout:'{"secret":"window-secret"}',stderr:""};
+  const sub=f.hub.subscribe(r.cx,{views:["inbox"],notify:true,window:true},r.message,r.state);
+  t.after(()=>sub.stop()); await until(()=>r.received.length===1);
+  for(const socket of f.clients) socket.write(JSON.stringify({window:{id:7,capability:"window-call-key",cmd:"do",command:"cockpit.panel-open:show:quota",args:{},deadline:Date.now()+10000}})+"\n");
+  await until(()=>f.messages.some(m=>m.op==="window_reply"));
+  const reply=f.messages.find(m=>m.op==="window_reply");
+  assert.equal(reply.id,7); assert.equal(reply.secret,"window-secret"); assert.equal(reply.capability,"window-call-key"); assert.deepEqual(reply.value,{});
+  assert.ok(f.calls.some(c=>c[0]==="run"&&c[1]==="cockpit.panel-open:show:quota"));
+  sub.stop(); await Promise.all(r.tasks);
+});
+
+test('a review or agent action focused on a local desktop terminal never reaches the runner',async t=>{
+ const f=await fixture(t);
+ for(const terminal of ['t7','app:t7']) {
+  await assert.rejects(f.hub.act('review','send',[terminal,{comments:[]}]),/not on runner/);
+  await assert.rejects(f.hub.act('agents','seen',[{terminal}]),/not on runner/);
+ }
+ assert.equal(f.calls.filter(c=>c[0]==='exec').length,0);
+});
+
+test("a rejected late window reply keeps the notification subscription alive", async t => {
+  const f=await fixture(t), r=runtime(t);
+  f.behavior.exec={code:0,stdout:'{"secret":"window-secret"}',stderr:""};
+  f.behavior.replyError="unknown, expired or already answered window command";
+  const sub=f.hub.subscribe(r.cx,{views:["inbox"],notify:true,window:true},r.message,r.state);
+  t.after(()=>sub.stop()); await until(()=>r.received.length===1);
+  const subscriber=[...f.clients][0];
+  subscriber.write(JSON.stringify({window:{id:7,capability:"window-call-key",cmd:"do",command:"cockpit.panel-open:show:quota",args:{},deadline:Date.now()+10000}})+"\n");
+  await until(()=>f.messages.some(m=>m.op==="window_reply"));
+  await new Promise(resolve=>setTimeout(resolve,30));
+  subscriber.write(JSON.stringify({notify:{title:"ENG-412"}})+"\n");
+  await until(()=>r.received.some(m=>m.notify?.title==="ENG-412"));
+  assert.equal(f.messages.filter(m=>m.op==="subscribe").length,1);
+  assert.ok(!r.states.some(s=>s.startsWith("error:")));
+  sub.stop(); await Promise.all(r.tasks);
 });
 
 test("a task is given up when its own timer goes quiet or its steps outlast every bound, never while it waits to retry", async t => {

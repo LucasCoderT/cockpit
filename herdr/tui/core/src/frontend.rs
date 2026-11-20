@@ -8,12 +8,41 @@
 use std::cell::Cell;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 
 use serde_json::{Value, json};
 
 use crate::files;
+
+/// Why a command for the Herdr window did not give an answer.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WindowError {
+    NoWindow,
+    MayHaveRun,
+    Failed(String),
+}
+
+impl WindowError {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::NoWindow => "no_window",
+            Self::MayHaveRun => "may_have_run",
+            Self::Failed(_) => "failed",
+        }
+    }
+}
+
+impl std::fmt::Display for WindowError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoWindow => f.write_str("no Herdr window is connected to this machine"),
+            Self::MayHaveRun => f.write_str("the Herdr window did not answer in time: the command may have run"),
+            Self::Failed(message) => f.write_str(message),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Frontend {
@@ -166,19 +195,70 @@ fn json_of(argv: &[String]) -> Option<Value> {
 // ---------------------------------------------------------------------------------------------------------------------
 // The Herdr app
 
+type Relay = fn(&str, &str, &Value) -> Result<Value, WindowError>;
+static RELAY: OnceLock<Relay> = OnceLock::new();
+
+/// Installs the hub's direct window relay without a request back to its own socket.
+pub fn set_relay(f: Relay) {
+    let _ = RELAY.set(f);
+}
+
+/// Whether this machine has the local Herdr app command.
+pub fn local_app() -> bool {
+    static LOCAL: OnceLock<bool> = OnceLock::new();
+    *LOCAL.get_or_init(|| {
+        let name = program("herdr-app", "HERDR_APP_BIN");
+        if name.contains('/') {
+            return std::path::Path::new(&name).is_file();
+        }
+        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()).any(|p| p.join(&name).is_file())
+    })
+}
+
+/// Calls the local Herdr app or the authenticated window connected to this machine's hub.
+pub fn window(cmd: &str, command: &str, args: &Value) -> Result<Value, WindowError> {
+    if !["do", "ls", "status"].contains(&cmd) {
+        return Err(WindowError::Failed(format!("unknown window command {cmd:?}")));
+    }
+    if local_app() {
+        let mut argv = vec![program("herdr-app", "HERDR_APP_BIN"), cmd.to_string()];
+        if cmd == "do" {
+            argv.extend([command.to_string(), args.to_string()]);
+        }
+        return json_of(&argv).ok_or_else(|| WindowError::Failed("the local Herdr window did not answer".into()));
+    }
+    if let Some(relay) = RELAY.get() {
+        return relay(cmd, command, args);
+    }
+    let answer = crate::hub::request_raw(&json!({"op":"window","cmd":cmd,"command":command,"args":args}), Duration::from_secs(12))
+        .map_err(|_| WindowError::MayHaveRun)?;
+    match answer["kind"].as_str() {
+        Some("no_window") => Err(WindowError::NoWindow),
+        Some("may_have_run") => Err(WindowError::MayHaveRun),
+        _ if answer["error"].is_string() => Err(WindowError::Failed(answer["error"].as_str().unwrap_or_default().into())),
+        _ if answer.get("value").is_some() => Ok(answer["value"].clone()),
+        _ => Err(WindowError::Failed("the cockpit hub sent no window answer".into())),
+    }
+}
+
 /// `herdr-app do <command> <args>`: what the command made, None when it failed.
 pub fn app_do(command: &str, args: &Value) -> Option<Value> {
-    json_of(&[program("herdr-app", "HERDR_APP_BIN"), "do".into(), command.into(), args.to_string()])
+    window("do", command, args).ok()
 }
 
 /// `herdr-app ls`: the spaces with their tabs and terminals.
 pub fn app_ls() -> Option<Value> {
+    window("ls", "", &Value::Null).ok()
+}
+
+/// Lists only a local window, without contacting a remote desktop.
+pub fn app_ls_local() -> Option<Value> {
     json_of(&[program("herdr-app", "HERDR_APP_BIN"), "ls".into()])
 }
 
 /// `herdr-app status`: the shown layout, focus and overlays.
 pub fn app_status() -> Option<Value> {
-    json_of(&[program("herdr-app", "HERDR_APP_BIN"), "status".into()])
+    window("status", "", &Value::Null).ok()
 }
 
 /// `hc <args> --json`.
@@ -456,6 +536,9 @@ pub fn run_in(handle: &str, line: &str) -> bool {
 /// Puts text at the prompt of an app terminal without sending it, through the clipboard, which gets its own text back
 /// a moment later.
 pub fn app_type(terminal: &str, text: &str) -> bool {
+    if !local_app() {
+        return remote_type(terminal, text, window);
+    }
     let before = clipboard();
     if !files::copy(text) {
         return false;
@@ -467,6 +550,10 @@ pub fn app_type(terminal: &str, text: &str) -> bool {
         files::copy(&String::from_utf8_lossy(&before));
     }
     pasted
+}
+
+fn remote_type(terminal: &str, text: &str, call: Relay) -> bool {
+    call("do", "terminal.paste", &json!({"terminal":terminal,"text":text})).is_ok()
 }
 
 /// The clipboard's text, read with the same tools `files::copy` writes with: pbpaste, wl-paste, xclip.
@@ -577,6 +664,41 @@ pub fn truthy(v: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_remote_paste_test_never_uses_an_installed_local_app_or_clipboard() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let bin = root.path().join("bin");
+        let log = root.path().join("calls");
+        std::fs::create_dir_all(&bin).unwrap();
+        for name in ["herdr-app", "pbcopy", "pbpaste", "wl-copy", "wl-paste", "xclip"] {
+            let file = bin.join(name);
+            std::fs::write(&file, "#!/bin/sh\nprintf '%s\\n' \"$0 $*\" >> \"$TASK_FRONTEND_CALLS\"\nprintf '%s\\n' '{}'\n").unwrap();
+            std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "frontend::tests::remote_paste_carries_text_without_using_the_servers_clipboard"])
+            .env_clear()
+            .env("HOME", root.path())
+            .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+            .env("HERDR_APP_BIN", bin.join("herdr-app"))
+            .env("HERDR_APP_HOME", root.path().join("app"))
+            .env("TASK_FRONTEND_CALLS", &log)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stdout));
+        assert!(!log.exists(), "the remote test reached a desktop or clipboard command: {}", std::fs::read_to_string(log).unwrap_or_default());
+    }
+
+    #[test]
+    fn remote_paste_carries_text_without_using_the_servers_clipboard() {
+        assert!(remote_type("t7", "Ship ENG-412", |cmd, command, args| {
+            assert_eq!((cmd, command), ("do", "terminal.paste"));
+            assert_eq!(args, &json!({"terminal":"t7","text":"Ship ENG-412"}));
+            Ok(json!({}))
+        }));
+    }
 
     #[test]
     fn a_request_names_its_frontend_for_its_thread_only() {

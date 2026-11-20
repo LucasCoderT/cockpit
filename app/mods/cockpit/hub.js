@@ -2,7 +2,10 @@
 // connection, and subscriptions that come back by themselves when the hub restarts or a copy of the window goes.
 
 import net from "net";
-import { exec, appHome, readTextFile, run, window as win } from "herdr";
+import { exec, appHome, readTextFile, run, window as win, panes } from "herdr";
+import { argsToRunner, toRunner } from "./address.js";
+import { runWindowCommand } from "./window.js";
+import { herdrApp } from "./herdr-app.js";
 
 /** Closes a socket, already closed or not: a throw here would end the subscription that is tidying up. */
 const close = (socket) => {
@@ -79,14 +82,9 @@ export const sleep = (cx, ms) => new Promise((resolve) => cx.timer.after(ms, () 
 const NOT_INSTALLED = "cockpit is not installed in this Herdr home";
 const READ_ONLY = "the remote cockpit client is read-only; this action needs a local cockpit installation";
 const REMOTE_READS = new Set(["ping", "view", "search", "fetch", "events", "history", "shown"]);
-const APPS = new Set(["inbox", "todo", "runbook", "meetings", "mail", "monitor", "routines", "show"]);
-/** The actions a remote desk runs on the runner with `cockpit hub act <app>`, the hub's TCP gate untouched. */
-const RUNNER_ACTS = {
-  review: new Set(["send", "walkthrough", "stop_walkthrough"]),
-  runbook: new Set(["done", "set", "add", "undo", "run_step"]),
-};
+const APPS = new Set(["inbox", "todo", "runbook", "meetings", "mail", "monitor", "routines", "aq", "show"]);
 /** The app behind a pinned space's name, as `cockpit focus space:<name>` gives it. */
-const SPACES = { inbox: "inbox", runbook: "runbook", "to-do": "todo", todo: "todo", meetings: "meetings", monitor: "monitor", routines: "routines", mail: "mail" };
+const SPACES = { inbox: "inbox", runbook: "runbook", "to-do": "todo", todo: "todo", meetings: "meetings", monitor: "monitor", routines: "routines", mail: "mail", aq: "aq" };
 
 /** Brings an app into view on this desktop, without a row to select. */
 function localShow(app) {
@@ -95,7 +93,7 @@ function localShow(app) {
   return { ok: true };
 }
 
-function localFocus(target) {
+export function focusHere(target) {
   if (!APPS.has(target?.app)) throw new Error(READ_ONLY);
   const focus = (globalThis.cockpitRemoteFocus ??= { targets: new Map(), listeners: new Set() });
   focus.targets.set(target.app, target);
@@ -391,13 +389,11 @@ export async function cockpit(args) {
         return { code: 0, stdout: "", stderr: "" };
       }
       const step = key.indexOf(":");
-      localFocus(app === "runbook"
+      focusHere(app === "runbook"
         ? { app, key: step < 0 ? key : key.slice(0, step), steps: step < 0 ? [] : key.slice(step + 1).split(",").filter(Boolean) }
         : { app: { meeting: "meetings", routine: "routines" }[app] ?? app, key });
       return { code: 0, stdout: "", stderr: "" };
     }
-    const runner = args[1] === "act" && (args.length === 5 || args.length === 6) && RUNNER_ACTS[args[2]]?.has(args[3]);
-    if (args[0] !== "hub" || !(["start", "ping", "shown"].includes(args[1]) || runner)) throw new Error(READ_ONLY);
     return exec("env", [...vars, `HOME=${home}`, `COCKPIT_HUB_LISTEN=${host}`, "COCKPIT_FRONTEND=app", bin, ...args], { on: machine });
   }
   return exec("env", [`HOME=${home}`, `HERDR_APP_HOME=${appHome()}`, "COCKPIT_FRONTEND=app", ...vars, bin, ...args]);
@@ -417,8 +413,16 @@ export async function request(op, fields = {}, cx = null) {
   sign();
   const { machine } = await install();
   if (machine) {
-    if (op === "go") return localFocus(fields.target);
-    if (op === "act" && RUNNER_ACTS[fields.app]?.has(fields.action)) return runnerAct(machine, fields.app, fields.action, fields.args ?? [], fields.armed);
+    if (op === "go") return focusHere(fields.target);
+    if (op === "act") {
+      const args = argsToRunner(fields.args ?? [], machine);
+      if ((fields.app === "review" && fields.action === "send") || fields.app === "queue") {
+        if (typeof args[0] === "string") args[0] = toRunner(args[0],machine);
+      }
+      const r = await cockpit(["hub", "act", fields.app, fields.action, JSON.stringify(args), ...(fields.armed ? ["--armed", fields.armed] : [])]);
+      if (r.code !== 0) throw new Error(r.stderr.trim() || `${fields.app} ${fields.action} failed on ${machine}`);
+      return JSON.parse(r.stdout);
+    }
     if (!REMOTE_READS.has(op)) throw new Error(READ_ONLY);
   }
   const connecting = connect(null, cx);
@@ -453,20 +457,6 @@ export async function request(op, fields = {}, cx = null) {
 
 /** Whether a request went to the hub and no answer came back: done or not, nobody knows. */
 export const isUnconfirmed = (e) => Boolean(e?.unconfirmed);
-
-/** A review or runbook action run by the runner's own cockpit, which hands it to its hub on the unix socket. Review
- *  comments go to a runner agent only: its address here is `<machine>/t7`, `t7` there. */
-async function runnerAct(machine, app, action, args, armed) {
-  if (app === "review" && action === "send") {
-    const terminal = String(args[0] ?? "").replace(/^app:/, "");
-    const local = terminal.startsWith(`${machine}/`) ? terminal.slice(machine.length + 1) : "";
-    if (!/^[A-Za-z0-9]+$/.test(local)) throw new Error("focus one of the runner's agents to send it the review");
-    args = [local, ...args.slice(1)];
-  }
-  const r = await cockpit(["hub", "act", app, action, JSON.stringify(args), ...(armed ? [armed] : [])]);
-  if (r.code !== 0) throw new Error(r.stderr.trim() || `${app} ${action} failed on ${machine}`);
-  return JSON.parse(r.stdout);
-}
 
 /** An app's action: { note, pending, refreshing, error }; bounded on `cx`'s timer when one is given. */
 export const act = (app, action, args = [], cx = null) => request("act", { app, action, args }, cx);
@@ -623,7 +613,7 @@ function beatFor(cx, state, tick) {
  *
  *   subscribe(cx, { views: ["todo"] }, (m, cx) => { this.model = m.value; cx.notify(); });
  */
-export function subscribe(cx, { views = [], docs = [], notify = false, focus = null }, onMessage, onState = () => {}) {
+export function subscribe(cx, { views = [], docs = [], notify = false, focus = null, window: windowCommands = false }, onMessage, onState = () => {}) {
   // `beat` moves while the copy lives (a copy the window dropped stops beating); `port` names the hub it is on;
   // `attempt` numbers the task following the hub, `moved` is when it last got anywhere, `answered` whether the hub ever
   // answered it (live or an error).
@@ -664,7 +654,16 @@ export function subscribe(cx, { views = [], docs = [], notify = false, focus = n
           if (!current()) break;
           state.socket = socket;
           state.port = port;
-          await socket.write(JSON.stringify({ op: "subscribe", token, views, docs, notify, keepalive: KEEPALIVE_SECS }) + "\n");
+          // A remote desk's window also runs the runner's window commands, once the runner shell vouches for it.
+          let secret;
+          if (remote && windowCommands) {
+            const result = await cockpit(["hub", "window-token"]);
+            if (result.code !== 0) throw new Error(result.stderr?.trim() || "could not get the window secret");
+            secret = JSON.parse(result.stdout).secret;
+            if (typeof secret !== "string" || !secret) throw new Error("the hub sent no window secret");
+            if (!current()) break;
+          }
+          await socket.write(JSON.stringify({ op: "subscribe", token, views, docs, notify, keepalive: KEEPALIVE_SECS, ...(secret ? { window: true, window_secret: secret } : {}) }) + "\n");
           let wrote = Date.now();
           state.connecting = false;
           state.answered = true;
@@ -696,6 +695,24 @@ export function subscribe(cx, { views = [], docs = [], notify = false, focus = n
             if (!line.trim()) continue;
             const message = JSON.parse(line);
             if (message.error) throw new Error(message.error);
+            if (message.window && secret) {
+              const clipboard = win()?.platform === "macos" ? {
+                wait: () => sleep(cx, 800),
+                read: async () => {
+                  const r = await exec("pbpaste", []);
+                  if (r.code !== 0) throw new Error("could not read the desktop clipboard");
+                  return r.stdout;
+                },
+                write: async (text) => {
+                  const r = await exec("sh", ["-c", 'printf %s "$1" | pbcopy', "sh", text]);
+                  if (r.code !== 0) throw new Error("could not write the desktop clipboard");
+                },
+              } : undefined;
+              const outcome = await runWindowCommand(message.window, { machine: remote, run, clipboard, focus: focusHere, panes, herdrApp });
+              // A late answer can be refused without invalidating this window's live subscription.
+              try { await windowReply(message.window.id, secret, message.window.capability, outcome); } catch {}
+              continue;
+            }
             if (remote && message.focus) continue;
             if (remote && message.view === "agents") message.value = { ...message.value, remote };
             onMessage(message, cx);
@@ -760,4 +777,14 @@ export function subscribe(cx, { views = [], docs = [], notify = false, focus = n
     },
   };
   return sub;
+}
+
+/** Answers a window command over TCP with the memory-only authority obtained through the runner shell. */
+async function windowReply(id, secret, capability, outcome) {
+  const {socket,token,lines} = await connect();
+  try {
+    await socket.write(JSON.stringify({op:"window_reply",token,id,secret,capability,...outcome}) + "\n");
+    const answer = JSON.parse(await lines.next());
+    if (answer.error) throw new Error(answer.error);
+  } finally { close(socket); }
 }

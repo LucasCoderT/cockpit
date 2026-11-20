@@ -5,6 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
@@ -84,6 +85,8 @@ enum Dirty {
 }
 
 struct Sub {
+    id: u64,
+    window: bool,
     tx: Outbox,
     /// Its connection was placed as the person's when it subscribed: views built for it may start work billed to them.
     person: bool,
@@ -107,6 +110,22 @@ fn picked(value: &Value, pick: &Option<Vec<String>>) -> Value {
         (Value::Object(map), Some(pick)) => Value::Object(map.iter().filter(|(k, _)| pick.contains(k)).map(|(k, v)| (k.clone(), v.clone())).collect()),
         _ => value.clone(),
     }
+}
+
+impl Drop for Sub {
+    fn drop(&mut self) {
+        if self.window {
+            crate::window::gone(self.id);
+        }
+    }
+}
+
+pub fn window_sender() -> Option<(u64, Outbox)> {
+    subs().iter().rev().find(|s| s.window && s.notify).map(|s| (s.id, s.tx.clone()))
+}
+
+pub fn window_gone(id: u64) {
+    subs().retain(|s| s.id != id);
 }
 
 fn subs() -> MutexGuard<'static, Vec<Sub>> {
@@ -165,7 +184,9 @@ fn wanted(request: &Value) -> Vec<(String, Value, Option<Vec<String>>)> {
 
 /// Sends the views now, then each new value of them, as {view, args, value} lines; also {focus, target} lines when
 /// the palette or a notification asks the view's app to bring something into view.
-pub fn subscribe(request: &Value, tx: Outbox) {
+pub fn subscribe(request: &Value, tx: Outbox) -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    let id = NEXT.fetch_add(1, Ordering::Relaxed);
     let views: Vec<Followed> = wanted(request)
         .into_iter()
         .map(|(name, args, pick)| {
@@ -175,11 +196,13 @@ pub fn subscribe(request: &Value, tx: Outbox) {
         })
         .collect();
     let notify = request["notify"] == true;
+    let window = request["window"] == true;
     if !views.is_empty() || notify {
         let person = !views.is_empty() && matches!(cockpit_core::peer::who(), cockpit_core::peer::Who::Person);
         dirty();
-        subs().push(Sub { tx, views, notify, person });
+        subs().push(Sub { id, window, tx, views, notify, person });
     }
+    id
 }
 
 /// Hands a notification {title, body, action, row, buttons} to the first window that shows them, as a {notify} line;
@@ -336,7 +359,22 @@ fn keep(rx: Receiver<Dirty>) {
 pub fn shown(name: &str) -> Vec<Value> {
     let mut subs = subs();
     subs.retain(|s| s.tx.send(String::new()).is_ok());
-    subs.iter().flat_map(|s| s.views.iter().filter(|f| f.name == name).map(|f| f.args.clone())).collect()
+    subs.iter()
+        .flat_map(|s| {
+            s.views.iter().filter(|f| f.name == name).map(|f| {
+                let mut shown = f.args.clone();
+                if name == "show"
+                    && let Some(document) = f.last["view"]["name"].as_str()
+                {
+                    if !shown.is_object() {
+                        shown = json!({});
+                    }
+                    shown["name"] = json!(document);
+                }
+                shown
+            })
+        })
+        .collect()
 }
 
 /// Forgets the subscribers whose connection went (their channel closed).
@@ -348,6 +386,14 @@ pub fn prune() {
 mod tests {
     use super::*;
     use crate::outbox::channel;
+
+    #[test]
+    fn documents_panel_visibility_includes_the_selected_document() {
+        register(Def { name: "show", docs: &[], dirs: Vec::new, build: |_, _| json!({"view":{"name":"quota"}}), act: |_, _| None });
+        let (tx, _rx) = channel();
+        subscribe(&json!({"views":[{"name":"show","args":{"terminal":"t7","pick":null}}]}), tx);
+        assert_eq!(shown("show")[0]["name"], "quota");
+    }
 
     fn counter(args: &Value, doc: Doc) -> Value {
         json!({"args": args, "inbox": doc("nope")})

@@ -363,6 +363,16 @@
                   "app": "mail"
                 }
               }
+            },
+            {
+              "id": "aq",
+              "type": "block",
+              "content": {
+                "mod": "cockpit",
+                "props": {
+                  "app": "aq"
+                }
+              }
             }
           ]
         }

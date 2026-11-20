@@ -22,6 +22,7 @@ pub mod store;
 mod usage;
 mod value;
 pub mod views;
+mod window;
 
 pub use act::start_view;
 
@@ -45,6 +46,7 @@ fn idle_limit() -> u64 {
 /// Serves until idle; returns at once when another hub already answers on the socket. Run with HUB_TASK set, it indexes
 /// the past agent sessions once instead (see search::sessions).
 pub fn run() {
+    cockpit_core::frontend::set_relay(|cmd, command, args| window::call(cmd, command, args, Duration::from_secs(10)));
     if std::env::var_os(search::sessions::HUB_TASK).is_some() {
         search::sessions::index_once();
         return;
@@ -155,7 +157,7 @@ pub fn tcp_file() -> PathBuf {
 }
 
 /// A random token from the system's source, as hex.
-fn token() -> std::io::Result<String> {
+pub(crate) fn token() -> std::io::Result<String> {
     let mut bytes = [0u8; 16];
     std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut bytes)?;
     Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())

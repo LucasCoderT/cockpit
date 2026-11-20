@@ -43,7 +43,7 @@ async function fixture({ layout = "cockpit", shown = "home", sandbox = false, fo
       act: async (app, action, args) => (acts.push({ app, action, args }), { note: "ok", error: null }),
       request: async (op, body) => (requests.push({ op, ...body }), { note: "ok" }),
       cockpit: async (args) => (clis.push(args), { code: 0, stdout: "", stderr: "" }),
-      view: async () => null, openUrl: async (url) => urls.push(url), install: async () => ({}), sleep: async () => {},
+      view: async () => null, openUrl: async (url) => urls.push(url), install: async () => ({}), sleep: async () => {}, focusHere: () => ({ ok: true }),
       subscribe: () => ({ stop() {} }), remoteMachine: () => null, isUnconfirmed: () => false, fetchDetails: async () => ({}), events: async () => [],
     },
   };
@@ -81,6 +81,7 @@ async function fixture({ layout = "cockpit", shown = "home", sandbox = false, fo
     'export { default as Routines } from "./routines.js";',
     'export { default as Inbox } from "./inbox.js";',
     'export { default as Mail } from "./mail.js";',
+    'export { default as Aq } from "./aq.js";',
     'export { default as Meetings } from "./meetings.js";',
     'export { default as Todo } from "./todo.js";',
     'export { default as Show } from "./show.js";',
@@ -632,7 +633,7 @@ const SHAPES = {
   // The runner's commands (commands.js), both layouts.
   palette: ["palette", "nav"], keys: ["keys", "nav"], recap: ["recap", "nav"], "recap:": ["recap:needs_you", "nav"],
   "next-waiting": ["next-waiting", "nav"], "next:blocked": ["next:blocked", "nav"], "next:done": ["next:done", "nav"],
-  panel: ["panel", "nav"], "panel:": ["panel:review", "nav"], "doc:": ["doc:deploy", "nav"], "go:": ["go:inbox", "nav"],
+  panel: ["panel", "nav"], "panel:": ["panel:review", "nav"], "panel-open:": ["panel-open:show:quota", "nav"], "doc:": ["doc:deploy", "nav"], "go:": ["go:inbox", "nav"],
   "via:": ["via:chat|chat:mode", "nav"], pr: ["pr", "nav"], ticket: ["ticket", "nav"],
   resume: ["resume", "allowed"], "link:": ["link:https://acme.example/x", "nav"], "target:": [`target:act:merge:${PR}`, "nav"],
   update: ["update", "nav"], settings: ["settings", "nav"], "settings:": ["settings:health", "nav"], diagnostics: ["diagnostics", "nav"], usage: ["usage", "nav"], start: ["start", "nav"],
@@ -656,6 +657,7 @@ const SHAPES = {
   "home:seen:*": ["home:seen:a:t3", "act"], "home:pin:*": ["home:pin:a:t3", "act"], "home:fork:*": ["home:fork:a:t3", "act"], "home:merge:*": ["home:merge:a:t3", "act"], "home:archive:*": ["home:archive:a:t3", "act"],
   "inbox:act:*": ["inbox:act:0", "act"], "inbox:pick": ["inbox:pick", "act"], "inbox:alike": ["inbox:alike", "act"], "inbox:fold": ["inbox:fold", "nav"],
   "inbox:state:*:*": ["inbox:state:ENG-7:Done", "act"],
+  "aq:act:*:*": ["aq:act:cancel:3f2a-91", "act"], "aq:act:extend:*:*": ["aq:act:extend:3f2a-91:30m", "act"],
   "mail:*:*": ["mail:reply:m1", "act"], "meetings:*:*": ["meetings:prepare:e1", "act"], "meetings:golist:*": ["meetings:golist:e1", "nav"],
   "mode:*:*": ["mode:acceptEdits:0123", "act"], "pick:model:*": ["pick:model:haiku|claude%3A1", "act"], "pick:effort:*": ["pick:effort:high|claude%3A1", "act"],
   "pick:fast:on": ["pick:fast:on|claude%3A1", "act"], "pick:fast:off": ["pick:fast:off|claude%3A1", "act"], "pick:fast:*": ["pick:fast:on|claude%3A1", "act"], "attach:file": ["attach:file", "nav"], "attach:clipboard": ["attach:clipboard", "act"],
@@ -725,6 +727,8 @@ function views(mod, f) {
   Object.assign(mail, { toasts: toasts(), handle: focus(), model: { messages: [{ id: "m1", fromName: "Maya", raw: { id: "m1" } }] }, hubAct: async (_cx, action) => f.effects.push(`mail ${action}`), openReading() {} });
   const meetings = Object.create(mod.Meetings.prototype);
   Object.assign(meetings, { toasts: toasts(), handle: focus(), open: new Set(), model: { meetings: [{ id: "e1", raw: { id: "e1" } }] }, hubAct: async (_cx, action) => f.effects.push(`meetings ${action}`), focusOn() {} });
+  const aq = Object.create(mod.Aq.prototype);
+  Object.assign(aq, { toasts: toasts(), handle: focus(), confirm: null, remote: false, visible: true, item: (id) => ({ id, acts: ["cancel", "extend", "release"] }) });
   const todo = Object.create(mod.Todo.prototype);
   Object.assign(todo, { toasts: toasts(), handle: focus(), menuAction: (action) => f.effects.push(`todo ${action}`) });
   const show = Object.create(mod.Show.prototype);
@@ -761,8 +765,8 @@ function views(mod, f) {
   Object.assign(settings, { p: {}, tab: "options", all: false, at: 0, optionAt: 0, pointed: true, asking: null, report: null, toasts: toasts(), handle: focus(), rowAt: {},
     options: [{ key: "chat.nextSteps", title: "Suggest next prompts", kind: "toggle", value: false }, { key: "agents.pace", title: "Pace of the 7-day limit", kind: "choice", value: "week", choices: [{ value: "week", label: "Whole week" }, { value: "weekdays", label: "Weekdays" }] }],
     saving: new Set(), errors: {}, fields: new Map(), drafts: {}, field: null, hubState: "live", v: null, checking: false });
-  const all = { sidebar, home: h, runbook, monitor, routines, inbox, mail, meetings, todo, show, start, review, code, palette, chat, top, update, settings };
-  const armed = () => ({ home: h.confirm, runbook: runbook.confirm, monitor: monitor.confirm, routines: routines.confirm, inbox: inbox.dialog, chat: chat.confirm ?? chat.merging, startTyped: start.started, homeSel: h.sel, picked: runbook.picked.size,
+  const all = { sidebar, home: h, runbook, monitor, routines, inbox, mail, meetings, aq, todo, show, start, review, code, palette, chat, top, update, settings };
+  const armed = () => ({ home: h.confirm, runbook: runbook.confirm, monitor: monitor.confirm, routines: routines.confirm, inbox: inbox.dialog, aq: aq.confirm, chat: chat.confirm ?? chat.merging, startTyped: start.started, homeSel: h.sel, picked: runbook.picked.size,
     options: update.pointed && settings.pointed ? null : "armed", updateStep: update.at });
   return { all, armed };
 }
@@ -816,7 +820,7 @@ test("every registered command, sent from outside the window, does nothing but n
       const armed = plain(v.armed());
       // A mode that asks less, named without the chat's own key, goes through its confirm, which only a click answers.
       if (shape === "mode:*:*") armed.chat = null;
-      assert.deepEqual(armed, { home: null, runbook: null, monitor: null, routines: null, inbox: null, chat: null, startTyped: false, homeSel: null, picked: 0, options: null, updateStep: 0 }, `${layout}: \`${sample}\` arms a confirm or picks something`);
+      assert.deepEqual(armed, { home: null, runbook: null, monitor: null, routines: null, inbox: null, aq: null, chat: null, startTyped: false, homeSel: null, picked: 0, options: null, updateStep: 0 }, `${layout}: \`${sample}\` arms a confirm or picks something`);
     }
   }
 });

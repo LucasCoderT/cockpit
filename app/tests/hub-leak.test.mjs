@@ -6,6 +6,14 @@ import { once } from "node:events";
 import { createContext, SourceTextModule, SyntheticModule } from "node:vm";
 import { test } from "node:test";
 
+/** The fork's own modules hub.js imports (remote desk), stubbed: these tests are about connections only. */
+const FORK = {
+  "./address.js": { argsToRunner: (args) => args, toRunner: (address) => address },
+  "./window.js": { runWindowCommand: async () => ({ value: {} }) },
+  "./herdr-app.js": { herdrApp: async () => ({ code: 1, stdout: "", stderr: "" }) },
+};
+const linked = (imports, name) => (name === "herdr" ? { panes: () => [], ...imports.herdr } : imports[name] ?? FORK[name]);
+
 const HUB = new URL("../mods/cockpit/hub.js", import.meta.url);
 
 /**
@@ -63,8 +71,8 @@ async function fixture(t, { connectDelay = 0, stopped = false } = {}) {
     } } },
   };
   const module = new SourceTextModule(await hubSource(), { context });
-  await module.link((name) => new SyntheticModule(Object.keys(imports[name]), function () {
-    for (const [k, v] of Object.entries(imports[name])) this.setExport(k, v);
+  await module.link((name) => new SyntheticModule(Object.keys(linked(imports, name)), function () {
+    for (const [k, v] of Object.entries(linked(imports, name))) this.setExport(k, v);
   }, { context }));
   await module.evaluate();
   return { hub: module.namespace, clients, calls };
@@ -132,8 +140,8 @@ async function loads(t, n, { connectDelay = () => 0, together = false } = {}) {
       } } },
     };
     const module = new SourceTextModule(source, { context, identifier: `hub.js#${i + 1}` });
-    await module.link((name) => new SyntheticModule(Object.keys(imports[name]), function () {
-      for (const [k, v] of Object.entries(imports[name])) this.setExport(k, v);
+    await module.link((name) => new SyntheticModule(Object.keys(linked(imports, name)), function () {
+      for (const [k, v] of Object.entries(linked(imports, name))) this.setExport(k, v);
     }, { context }));
     await module.evaluate();
     evaluated.push(module.namespace);
@@ -243,8 +251,8 @@ async function idleReads(t, { gaveUp = 2 } = {}) {
   };
   const context = createContext({ console });
   const module = new SourceTextModule(await hubSource(), { context, identifier: "hub.js#idle" });
-  await module.link((name) => new SyntheticModule(Object.keys(imports[name]), function () {
-    for (const [k, v] of Object.entries(imports[name])) this.setExport(k, v);
+  await module.link((name) => new SyntheticModule(Object.keys(linked(imports, name)), function () {
+    for (const [k, v] of Object.entries(linked(imports, name))) this.setExport(k, v);
   }, { context }));
   await module.evaluate();
   return { hub: module.namespace, clients, refusals: () => refusals };

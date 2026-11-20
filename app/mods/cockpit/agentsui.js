@@ -369,8 +369,7 @@ export class AgentsModel {
     pinChat(null);
     run("agent.focus", { terminal: row.address });
     showWork();
-    // A runner's hub takes no writes from a remote desk.
-    if (person && !row.herdr && !row.remote) this.act(cx, "seen", { terminal: row.terminal });
+    if (person && !row.herdr) this.act(cx, "seen", { terminal: row.terminal });
   }
 
   /** The right-click menu of an agent; its items come back as `cockpit.agents|<what>|<terminal>|<arg>`. */

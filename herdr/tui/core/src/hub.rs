@@ -98,6 +98,15 @@ fn connect(timeout: Duration) -> Option<UnixStream> {
 
 /// One request and its answer; an error when the hub cannot be reached or answers with `error`.
 pub fn request(req: &Value, timeout: Duration) -> Result<Value, String> {
+    let answer = request_raw(req, timeout)?;
+    match answer.get("error").and_then(Value::as_str) {
+        Some(error) if answer.get("note").is_none() => Err(error.to_string()),
+        _ => Ok(answer),
+    }
+}
+
+/// One request and its complete answer, including structured errors.
+pub fn request_raw(req: &Value, timeout: Duration) -> Result<Value, String> {
     let mut stream = connect(timeout).ok_or_else(|| match stopped_file().exists() {
         true => STOPPED.to_string(),
         false => "the cockpit hub did not start; what it said is in ~/.cache/cockpit/hub.log".to_string(),
@@ -108,10 +117,7 @@ pub fn request(req: &Value, timeout: Duration) -> Result<Value, String> {
     let mut line = String::new();
     BufReader::new(stream).read_line(&mut line).map_err(|e| e.to_string())?;
     let answer: Value = serde_json::from_str(&line).map_err(|_| "the cockpit hub sent no answer".to_string())?;
-    match answer.get("error").and_then(Value::as_str) {
-        Some(error) if answer.get("note").is_none() => Err(error.to_string()),
-        _ => Ok(answer),
-    }
+    Ok(answer)
 }
 
 #[derive(Clone, Debug)]

@@ -13,6 +13,7 @@ const APPS = [
   ["monitor", "Monitor", "activity"],
   ["routines", "Routines", "clock"],
   ["mail", "Mail", "mail"],
+  ["aq", "aq", "cpu"],
 ];
 
 /** A screen as the palette, the app strip and the keys sheet name it, with the command its key is bound to. */
