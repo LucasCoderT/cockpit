@@ -8,7 +8,7 @@
 #                                               calls and notifications go to the desk); its hub listens on loopback at
 #                                               <n> (47821) and `tailscale serve` forwards <ip>:<n> (its Tailscale IPv4)
 #                                               there; --direct listens on <ip> itself instead ("hubListen")
-#   sh scripts/desk.sh desk <machine> [--with-local] [--runner <other>]...
+#   sh scripts/desk.sh desk <machine> [--with-local [--local-name <name>]] [--runner <other>]...
 #                                               on the desktop: this checkout's mod in the Herdr app, and cockpit.json
 #                                               pointing at <machine>'s hub (its paths and address read through
 #                                               herdr-core); --with-local and --runner add this machine's hub and
@@ -89,12 +89,22 @@ desk() {
   command -v hc >/dev/null || die "hc (herdr-core) is needed"
   command -v jq >/dev/null || die "jq is needed"
   extra='[]'
+  app_home=${HERDR_APP_HOME:-$HOME/.config/herdr-app}
+  # This machine's name in the window: --local-name, else the one cockpit.json gives it now, else the host's.
+  local_name=$(jq -r '[.extra[]? | select(.machine == null) | .name][0] // empty' "$app_home/cockpit.json" 2>/dev/null || true)
+  [ -n "$local_name" ] || local_name=$(hostname -s)
   while [ $# -gt 0 ]; do
     case "$1" in
+      --local-name)
+        [ -n "${2:-}" ] || die "--local-name needs a name"
+        local_name=$2
+        extra=$(printf '%s' "$extra" | jq --arg n "$2" 'map(if .machine == null then .name = $n else . end)')
+        shift
+        ;;
       --with-local)
         # This machine's own cockpit too: its agents join the runner's in the window (app/mods/cockpit/extra.js).
         local_bin=$(readlink -f "$HOME/.config/cockpit/herdr/bin/cockpit" 2>/dev/null || echo "$HOME/.config/cockpit/herdr/bin/cockpit")
-        extra=$(printf '%s' "$extra" | jq --arg n "$(hostname -s)" --arg b "$local_bin" --arg home "$HOME" '. + [{name: $n, bin: $b, home: $home, cache: ($home + "/.cache/cockpit")}]')
+        extra=$(printf '%s' "$extra" | jq --arg n "$local_name" --arg b "$local_bin" --arg home "$HOME" '. + [{name: $n, bin: $b, home: $home, cache: ($home + "/.cache/cockpit")}]')
         ;;
       --runner)
         [ -n "${2:-}" ] || die "--runner needs a machine"
@@ -106,7 +116,6 @@ desk() {
     shift
   done
   primary=$(runner_install "$machine")
-  app_home=${HERDR_APP_HOME:-$HOME/.config/herdr-app}
   cockpit app install --from "$PWD/app"
   printf '%s' "$primary" | jq --arg v "$(jq -r .version plugin/.claude-plugin/plugin.json)" --argjson extra "$extra" \
     'del(.name) + {version: $v} + (if ($extra | length) > 0 then {extra: $extra} else {} end)' >"$app_home/cockpit.json"

@@ -23,7 +23,7 @@ Claude Code sessions that run on others (runners), with cockpit's hub on each ru
   notification on the desk (the Cockpit notifier on macOS, `notify-send` on Linux), and a click on it
   (`cockpit focus herdr-app:<row>`) is handed to the desk's mod.
 - **Several hubs in one window** (upstream #51, `docs/app.md`, "Several hubs in one window"): `cockpit.json`'s `extra`
-  lists this machine's cockpit and other runners (`desk.sh desk <runner> --with-local --runner <other>`). Every hub's
+  lists this machine's cockpit and other runners (`desk.sh desk <runner> --with-local --local-name <name> --runner <other>`). Every hub's
   agents in one list, each acted on at its own hub; the apps behind a machine switch in the sidebar
   (`cockpit.hub:<name>`); each session's `show` panes from its own hub; notifications, window commands and usage
   limits from every hub.
