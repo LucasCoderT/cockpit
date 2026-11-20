@@ -168,6 +168,36 @@ fn the_last_window_to_subscribe_gets_the_commands() {
 }
 
 #[test]
+fn a_forwarded_hub_listens_on_loopback_names_the_forwarded_address_and_reads_only() {
+    use std::io::{BufRead, BufReader, Write};
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let sandbox = Sandbox::new(&json!({}), &json!({"hubForward": "100.64.0.10", "hubPort": port}));
+    // The variable a desk passes when it starts a runner's hub does not take it off the forwarder's port.
+    let _hub = Hub::start(&sandbox, &[("COCKPIT_HUB_LISTEN", "::1")]);
+    let started = Instant::now();
+    let info: Value = loop {
+        if let Ok(text) = std::fs::read_to_string(sandbox.home().join(".cache/cockpit/hub.json")) {
+            break serde_json::from_str(&text).unwrap();
+        }
+        assert!(started.elapsed() < Duration::from_secs(5), "no TCP discovery file");
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!((info["host"].as_str(), info["port"].as_u64()), (Some("100.64.0.10"), Some(port as u64)));
+    let mut writer = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    writer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let mut answers = BufReader::new(writer.try_clone().unwrap());
+    let mut ask = |request: Value| {
+        writeln!(writer, "{request}").unwrap();
+        let mut line = String::new();
+        answers.read_line(&mut line).unwrap();
+        serde_json::from_str::<Value>(&line).unwrap()
+    };
+    assert_eq!(ask(json!({"op": "ping", "token": info["token"]})), json!({"ok": true}));
+    let refused = ask(json!({"op": "store.put", "name": "meetings", "value": {"items": ["one"]}, "token": info["token"]}));
+    assert!(refused["error"].as_str().unwrap().contains("reads only"), "{refused}");
+}
+
+#[test]
 fn tcp_on_an_explicit_interface_authenticates_and_streams_inbox_updates() {
     use std::io::{BufRead, BufReader, Write};
     use std::net::TcpStream;

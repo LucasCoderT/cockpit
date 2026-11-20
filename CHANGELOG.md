@@ -7,6 +7,7 @@ must be here first.
 
 ## Unreleased
 
+- Fork: a runner's config can say `"hubForward": "<ip>"`: the hub listens on loopback at `hubPort` (47821) for `tailscale serve` to forward, past the macOS firewall that holds an unsigned binary's incoming connections after every update
 - Fork: `COCKPIT_HUB_LISTEN` reaches the hub again (its login-shell environment dropped it), and a runner's config can say `"hubListen": "<ip>"` so any hub started there listens on its network
 
 ## 1.2.1 (2026-11-20)

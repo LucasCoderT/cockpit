@@ -62,7 +62,7 @@ pub fn run() {
     let tcp = match listen() {
         Ok(tcp) => tcp,
         Err(why) => {
-            eprintln!("cockpit hub: cannot listen on COCKPIT_HUB_LISTEN: {why}");
+            eprintln!("cockpit hub: cannot take its TCP port (COCKPIT_HUB_LISTEN, hubListen, hubForward): {why}");
             return;
         }
     };
@@ -163,15 +163,46 @@ pub(crate) fn token() -> std::io::Result<String> {
     Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// Takes the desktop protocol's port on loopback, or on COCKPIT_HUB_LISTEN's explicit interface, else the config's
-/// `hubListen` (a runner's: a hub started by any of its sessions or windows listens there too).
-fn listen() -> std::io::Result<(TcpListener, std::net::IpAddr)> {
+/// The port a forwarded hub takes on loopback when the config names none.
+const FORWARD_PORT: u16 = 47821;
+
+/// The hub's TCP side: what it listens on, the address hub.json gives desks, and whether it serves reads only.
+struct Tcp {
+    listener: TcpListener,
+    host: std::net::IpAddr,
+    read_only: bool,
+}
+
+/// Takes the desktop protocol's port. A runner whose config says `hubForward` listens on loopback at `hubPort` (a
+/// forwarder such as `tailscale serve` brings desks there, past the system firewall that holds an unsigned binary's
+/// incoming connections) and serves reads only, as any connection may be a desk's. Otherwise loopback, or
+/// COCKPIT_HUB_LISTEN's explicit interface, else the config's `hubListen`.
+fn listen() -> std::io::Result<Tcp> {
+    let forward = cockpit_core::files::setting("hubForward");
+    if let Some(forward) = forward.as_str().filter(|f| !f.trim().is_empty()) {
+        let host: std::net::IpAddr = forward.trim().parse().map_err(|_| std::io::Error::other("hubForward must be an IP address"))?;
+        let port = cockpit_core::files::setting("hubPort").as_u64().and_then(|p| u16::try_from(p).ok()).filter(|p| *p > 0).unwrap_or(FORWARD_PORT);
+        return Ok(Tcp { listener: bind_retrying((std::net::Ipv4Addr::LOCALHOST, port).into())?, host, read_only: true });
+    }
     let host = listen_host(std::env::var("COCKPIT_HUB_LISTEN").ok(), &cockpit_core::files::setting("hubListen"));
     let host: std::net::IpAddr = host.parse().map_err(|_| std::io::Error::other("COCKPIT_HUB_LISTEN must be an IP address"))?;
     if host.is_unspecified() || host.is_multicast() {
         return Err(std::io::Error::other("COCKPIT_HUB_LISTEN must name one interface, not a wildcard or multicast address"));
     }
-    Ok((TcpListener::bind((host, 0))?, host))
+    Ok(Tcp { listener: TcpListener::bind((host, 0))?, host, read_only: !host.is_loopback() })
+}
+
+/// A fixed port a hub handing over may still hold for a moment: tried again for a few seconds.
+fn bind_retrying(at: std::net::SocketAddr) -> std::io::Result<TcpListener> {
+    let start = std::time::Instant::now();
+    loop {
+        match TcpListener::bind(at) {
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse && start.elapsed() < std::time::Duration::from_secs(5) => {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            other => return other,
+        }
+    }
 }
 
 /// The address the hub's TCP side takes: the variable's, else the config's `hubListen`, else loopback.
@@ -182,7 +213,7 @@ fn listen_host(var: Option<String>, configured: &serde_json::Value) -> String {
 }
 
 /// Serves that port: hub.json carries the token each request needs, and off loopback the connection reads only.
-fn serve_tcp((listener, host): (TcpListener, std::net::IpAddr), last: Arc<AtomicU64>) -> std::io::Result<()> {
+fn serve_tcp(Tcp { listener, host, read_only }: Tcp, last: Arc<AtomicU64>) -> std::io::Result<()> {
     let port = listener.local_addr()?.port();
     let token = token()?;
     let info = serde_json::json!({"host": host.to_string(), "port": port, "token": token, "pid": std::process::id()});
@@ -191,7 +222,7 @@ fn serve_tcp((listener, host): (TcpListener, std::net::IpAddr), last: Arc<Atomic
     let _ = std::fs::remove_file(&tmp);
     let written = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&tmp).and_then(|mut f| f.write_all(info.to_string().as_bytes()));
     written.and_then(|_| std::fs::rename(&tmp, &path))?;
-    let gate = server::Gate { token: Some(token), frontend: Some(cockpit_core::frontend::Frontend::App), read_only: !host.is_loopback() };
+    let gate = server::Gate { token: Some(token), frontend: Some(cockpit_core::frontend::Frontend::App), read_only };
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             if STOPPING.load(Ordering::SeqCst) {
