@@ -283,19 +283,28 @@ export async function keep(cx) {
   }
 }
 
+/** How far apart two readings' resets can be and still be one window of one account (clocks, rounding). */
+const SAME_WINDOW_MS = 10 * 60 * 1000;
+
 /**
- * Every hub's usage limits in one list: another machine's limit that reads the same as one already there (the same
- * account on both) is left out; one that differs is named after its machine ("7d · laptop").
+ * Every hub's usage limits in one list. A subscription's limits are its account's, not a machine's: two readings of the
+ * same agent's window whose resets agree (or that cannot say) are one account, shown once by its freshest reading; one
+ * whose window resets at another time is another account, named after its machine ("7d · laptop").
  */
 export function mergeQuota(own = [], extra = []) {
   const list = Array.isArray(own) ? [...own] : [];
-  const key = (q) => `${q.agent ?? ""}|${q.provider ?? ""}|${q.name ?? ""}`;
-  const seen = new Map(list.map((q) => [key(q), q]));
+  const kind = (q) => `${q.agent ?? ""}|${q.provider ?? ""}|${q.name ?? ""}`;
+  const sameAccount = (a, b) => kind(a) === kind(b) && (a.resets_at == null || b.resets_at == null || Math.abs(a.resets_at - b.resets_at) <= SAME_WINDOW_MS);
+  const fresher = (a, b) => ((b.state === "fresh") !== (a.state === "fresh") ? b.state === "fresh" : (b.as_of ?? 0) > (a.as_of ?? 0));
   for (const q of extra.flatMap((e) => e.quota ?? [])) {
-    const same = seen.get(key(q));
-    if (same && (same.percent ?? null) === (q.percent ?? null) && (same.resets ?? null) === (q.resets ?? null)) continue;
-    list.push(same || seen.has(key(q)) ? { ...q, name: `${q.name} · ${q.machine}`, label: `${q.label ?? q.name} · ${q.machine}` } : q);
-    seen.set(key(q), q);
+    const at = list.findIndex((p) => sameAccount(p, q));
+    if (at >= 0) {
+      // The same account read on another machine: its newer reading wins, under the account's own name.
+      if (fresher(list[at], q)) list[at] = { ...q, name: list[at].name, label: list[at].label };
+      continue;
+    }
+    const named = list.some((p) => kind(p) === kind(q));
+    list.push(named ? { ...q, name: `${q.name} · ${q.machine}`, label: `${q.label ?? q.name} · ${q.machine}` } : q);
   }
   return list;
 }

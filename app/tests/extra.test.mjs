@@ -47,11 +47,11 @@ test("the agents view carries the extra hubs' rows, sent again on the copy's tim
   const got = [];
   const { cx, tick } = copy();
   const sub = extra.route(open, cx, { views: ["agents", "home"] }, (m) => got.push(m), () => {});
-  deliver({ view: "agents", value: { agents: [{ address: "t7" }], quota: [{ provider: "Claude", name: "7d", percent: 87 }] } }, cx);
+  deliver({ view: "agents", value: { agents: [{ address: "t7" }], quota: [{ provider: "Claude", name: "7d", percent: 87, resets_at: 1e12 }] } }, cx);
   deliver({ view: "home", value: { merged: [] } }, cx);
   assert.deepEqual(JSON.parse(JSON.stringify(got.map((m) => [m.view, m.value.extra ?? null]))), [["agents", null], ["home", null]]);
   // A follower's news: the laptop's agents arrive, with its limits labelled by machine.
-  context.cockpitExtraHubs.followers.set("laptop", { name: "laptop", value: { rows: [{ address: "t5", hub: "laptop" }], counts: {}, quota: [{ provider: "Claude", name: "7d", percent: 40, machine: "laptop" }] }, mark: { alive: Date.now() } });
+  context.cockpitExtraHubs.followers.set("laptop", { name: "laptop", value: { rows: [{ address: "t5", hub: "laptop" }], counts: {}, quota: [{ provider: "Claude", name: "7d", percent: 40, resets_at: 9e12, machine: "laptop" }] }, mark: { alive: Date.now() } });
   context.cockpitExtraHubs.version += 1;
   tick();
   assert.equal(got.length, 3);
@@ -86,11 +86,17 @@ test("a terminal or a pane belongs to the hub of its machine", async () => {
   assert.equal(extra.owners().get("app:box/t2").name, "box");
 });
 
-test("the same account's limits read once, another account's under its machine", async () => {
+test("a subscription's limits show once, by the freshest reading; another account's under its machine", async () => {
   const { extra } = await load();
-  const own = [{ agent: "claude", provider: "Claude", name: "7d", label: "Claude 7d", percent: 87, resets: "Fri" }];
-  const same = [{ name: "laptop", quota: [{ agent: "claude", provider: "Claude", name: "7d", label: "Claude 7d", percent: 87, resets: "Fri", machine: "laptop" }] }];
-  assert.equal(extra.mergeQuota(own, same).length, 1);
-  const other = [{ name: "box", quota: [{ agent: "claude", provider: "Claude", name: "7d", label: "Claude 7d", percent: 12, resets: "Mon", machine: "box" }, { agent: "codex", provider: "OpenAI", name: "5h", percent: 3, machine: "box" }] }];
-  assert.deepEqual(JSON.parse(JSON.stringify(extra.mergeQuota(own, other).map((q) => q.label ?? q.name))), ["Claude 7d", "Claude 7d · box", "5h"]);
+  const own = [{ agent: "claude", provider: "Claude", name: "7d", label: "Claude 7d", percent: 87, figure: "≥87%", state: "stale", resets_at: 1_000_000_000, as_of: 10 }];
+  // The same account read on the laptop: its reset agrees within minutes, its reading is fresher.
+  const laptop = [{ name: "laptop", quota: [{ agent: "claude", provider: "Claude", name: "7d", label: "Claude 7d", percent: 88, figure: "88%", state: "fresh", resets_at: 1_000_000_000 + 60_000, as_of: 20, machine: "laptop" }] }];
+  const merged = extra.mergeQuota(own, laptop);
+  assert.deepEqual(JSON.parse(JSON.stringify(merged.map((q) => [q.label, q.figure]))), [["Claude 7d", "88%"]]);
+  // An older reading from another machine leaves the fresher one alone.
+  const older = [{ name: "laptop", quota: [{ ...laptop[0].quota[0], state: "stale", as_of: 5, figure: "≥80%" }] }];
+  assert.equal(extra.mergeQuota([{ ...own[0], state: "fresh", figure: "87%" }], older)[0].figure, "87%");
+  // Another account: its week resets days apart, so both show, the other under its machine; a new agent as it is.
+  const box = [{ name: "box", quota: [{ agent: "claude", provider: "Claude", name: "7d", label: "Claude 7d", percent: 12, resets_at: 1_000_000_000 + 3 * 86_400_000, machine: "box" }, { agent: "codex", provider: "OpenAI", name: "5h", percent: 3, machine: "box" }] }];
+  assert.deepEqual(JSON.parse(JSON.stringify(extra.mergeQuota(own, box).map((q) => q.label ?? q.name))), ["Claude 7d", "Claude 7d · box", "5h"]);
 });

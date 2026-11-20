@@ -200,8 +200,9 @@ hub's watchdog.
   (null: the window's own).
 - **Notifications** come from every hub (the sidebar's subscription), each posted through its own install; a runner's
   window commands are run in this window, answered to that runner's hub.
-- **Usage limits** list every hub's: a limit that reads the same on two machines (one account) once, one that differs
-  as `<name> · <machine>`.
+- **Usage limits** are an account's, not a machine's: readings of one agent's window whose resets agree (within
+  10 minutes, or that cannot say) show once, by the freshest reading; a window that resets at another time is another
+  account, shown as `<name> · <machine>`.
 
 ## Window-wide plumbing (`commands.js`)
 
