@@ -12,7 +12,7 @@ import { toRunner } from "./address.js";
 import { UpdateBadge, panelVisible } from "./updates.js";
 import { take } from "./person.js";
 import { layoutName, frontAgent, CHAT_SUBJECT } from "./screens.js";
-import { tokens, alpha, TEXT, RADIUS, Icon, Badge, Button, Kbd, ChoiceKey, Empty, Toaster, Progress, Spinner, openMenu, dur } from "./ui.js";
+import { tokens, alpha, TEXT, RADIUS, Icon, Badge, Button, Kbd, ChoiceKey, Empty, Toaster, Progress, Spinner, openMenu, dur, mono } from "./ui.js";
 import { Chart, Figures, zoomed, compact } from "./plot.js";
 import { parseFlowchart, flowGraph, laidOut, Graph, graphSize, Sequence, sequenceSize, fit } from "./diagram.js";
 import { DiffView } from "./diff.js";
@@ -900,7 +900,7 @@ export default class Show {
     const cell = (i, content, head) => {
       let el = h_flex().flex_1().min_w(0).px(8).items_center();
       if (b.numeric?.[i]) el = el.justify_end();
-      return el.child(div().truncate().when(Boolean(b.numeric?.[i]) && !head, (e) => e.font_family("JetBrains Mono").text_size(TEXT.sm)).child(content));
+      return el.child(div().truncate().when(Boolean(b.numeric?.[i]) && !head, (e) => e.font_family(mono()).text_size(TEXT.sm)).child(content));
     };
     const header = h_flex().h(34).border_b_1().border_color(k.border).children(cols.map((c, i) => {
       const on = st.sort?.i === i;
@@ -1025,7 +1025,7 @@ export default class Show {
     const controls = h_flex().flex_none().gap(2).items_center().p(2).rounded(RADIUS.md).border_1().border_color(k.border)
         .child(Button(`show-bp-fit-${b.n}`, { label: "Fit", size: "sm", variant: st.scale == null ? "secondary" : "ghost", tooltip: "Fit to the pane (0)", onClick: zoom(null) }))
         .child(Button(`show-bp-out-${b.n}`, { icon: "minus", size: "icon-sm", variant: "ghost", tooltip: "Smaller (−)", onClick: zoom(Math.max(0.3, scale / 1.2)) }))
-        .child(div().w(42).flex_none().text_center().font_family("JetBrains Mono").text_size(TEXT.xs).text_color(k.mutedFg).child(`${Math.round(scale * 100)}%`))
+        .child(div().w(42).flex_none().text_center().font_family(mono()).text_size(TEXT.xs).text_color(k.mutedFg).child(`${Math.round(scale * 100)}%`))
         .child(Button(`show-bp-in-${b.n}`, { icon: "plus", size: "icon-sm", variant: "ghost", tooltip: "Larger (+)", onClick: zoom(Math.min(2, scale * 1.2)) }));
     // A narrow pane gives the title the whole row: the zoom goes to the foot.
     const head = h_flex().gap(8).items_center().min_h(32)
@@ -1166,12 +1166,12 @@ export default class Show {
     const lines = data.lines;
     const color = (level) => (level === "error" ? k.destructive : level === "warn" ? k.warning : k.foreground);
     const list = v_virtual_list(`show-log-${key}`, lines.length, 18, (i) => String(i), (range) =>
-      lines.slice(range.start, range.end).map(([text, level]) => div().h(18).px(10).whitespace_nowrap().text_size(TEXT.sm).font_family("JetBrains Mono").text_color(color(level)).child(text || " "))).size_full();
+      lines.slice(range.start, range.end).map(([text, level]) => div().h(18).px(10).whitespace_nowrap().text_size(TEXT.sm).font_family(mono()).text_color(color(level)).child(text || " "))).size_full();
     return v_flex().gap(6)
       .child(div().relative().h(Math.min(Math.max(lines.length, 1), 18) * 18 + 8).py(4).rounded(RADIUS.md).bg(alpha(k.muted, 0.6)).child(list).child(Scrollbar.vertical(`show-log-${key}`).viewport_from_layout().absolute().inset_0()))
       .child(h_flex().gap(8).items_center().text_size(TEXT.xs).text_color(k.mutedFg)
         .child(Badge(data.code === 0 ? "exit 0" : `exit ${data.code}`, data.code === 0 ? "success" : "destructive"))
-        .child(div().font_family("JetBrains Mono").truncate().flex_1().child(`$ ${b.command}`))
+        .child(div().font_family(mono()).truncate().flex_1().child(`$ ${b.command}`))
         .child(div().flex_none().child(`every ${b.every}s · ${hhmm(data.at)}`)));
   }
 
@@ -1190,7 +1190,7 @@ export default class Show {
         .child(div().flex_none().text_size(TEXT.sm).font_medium().child(`${r.done}/${r.total} jobs · ${r.status === "failed" ? r.outcome || "failed" : r.status}`)))
       .when(Boolean(r.failed?.job), (e) => e.child(v_flex().gap(4).p(10).rounded(RADIUS.md).bg(alpha(k.destructive, 0.08))
         .child(h_flex().gap(6).items_center().text_size(TEXT.sm).text_color(k.destructive).child(Icon("circle-x", { size: 14 })).child(div().flex_1().min_w(0).child(`${r.failed.job}${r.failed.step ? ` · ${r.failed.step}` : ""}`)))
-        .children((r.failed.tests ?? []).slice(0, 12).map((t) => div().pl(20).text_size(TEXT.xs).font_family("JetBrains Mono").text_color(k.mutedFg).child(String(t))))));
+        .children((r.failed.tests ?? []).slice(0, 12).map((t) => div().pl(20).text_size(TEXT.xs).font_family(mono()).text_color(k.mutedFg).child(String(t))))));
   }
 
   // Questions ----------------------------------------------------------------------------------------------------------

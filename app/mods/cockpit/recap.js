@@ -6,7 +6,7 @@
 import { div } from "gpui-kit";
 import { h_flex, v_flex, InputState } from "gpui-base";
 import { props, closeOverlay, notify } from "herdr";
-import { tokens, alpha, TEXT, RADIUS, Icon, Kbd, Button, Chip, CountPill, StageHeading, SearchField, KeyHints, Table, Empty, Spinner, Toaster, dur, AgentLogo } from "./ui.js";
+import { tokens, alpha, TEXT, RADIUS, Icon, Kbd, Button, Chip, CountPill, StageHeading, SearchField, KeyHints, Table, Empty, Spinner, Toaster, dur, AgentLogo, mono } from "./ui.js";
 import { AgentsModel, QuestionCard, QuotaBars, StageMark, Chips, STAGES, stageColor, stageAge, hours, dismissable } from "./agentsui.js";
 
 export default class Recap {
@@ -226,7 +226,7 @@ export default class Recap {
       v_flex()
         .w_full()
         .gap(3)
-        .child(div().text_size(TEXT.sm).font_family("JetBrains Mono").text_color(s ? (isToday ? k.foreground : k.mutedFg) : k.dim).child(s ? hours(s) : "·"))
+        .child(div().text_size(TEXT.sm).font_family(mono()).text_color(s ? (isToday ? k.foreground : k.mutedFg) : k.dim).child(s ? hours(s) : "·"))
         .child(div().h(3).rounded(2).bg(k.muted).child(div().h_full().rounded(2).bg(isToday ? k.ring : alpha(k.ring, 0.45)).w(`${(s / max) * 100}%`)));
     const columns = [
       { key: "ticket", label: "Ticket" },
@@ -239,7 +239,7 @@ export default class Recap {
         const t = tickets.get(r.key);
         const cells = {
           ticket: h_flex().gap(8).min_w(0).items_center().child(Icon("ticket", { size: 13, color: k.info })).child(div().flex_none().font_semibold().child(r.key)).child(div().min_w(0).truncate().text_color(k.mutedFg).child(t?.title ?? "")),
-          total: div().font_semibold().font_family("JetBrains Mono").child(hours(r.total)),
+          total: div().font_semibold().font_family(mono()).child(hours(r.total)),
         };
         week.days.forEach((d, i) => (cells[`d${i}`] = cell(r.secs[i], d === todayKey)));
         return { id: r.key, cells };

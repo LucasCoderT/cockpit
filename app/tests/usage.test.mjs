@@ -251,3 +251,14 @@ test("space-tree terminal rows lead with the tab's title, the program after it",
   const words = all.filter((w) => w === "Quota checks" || w === "Codex");
   assert.deepEqual(words, ["Quota checks", "Codex"]);
 });
+
+test("text follows Herdr's sizes and the monospaced pieces its terminal font", async () => {
+  const look = { font_family: "Hack Nerd Font Mono", font_size: 17, ui_font_family: "Hack Nerd Font Mono", ui_font_size: 13 };
+  const ui = await usage("./ui.js", { herdr: { settings: () => look } });
+  assert.equal(ui.mono(), "Hack Nerd Font Mono");
+  assert.deepEqual([ui.TEXT.xs, ui.TEXT.sm, ui.TEXT.base, ui.TEXT.lg], [11, 12, 13, 15], "the UI at Herdr's default text size");
+  assert.deepEqual([ui.TERM.xs, ui.TERM.sm, ui.TERM.base, ui.TERM.lg], [14, 16, 17, 20], "what stands in for a terminal, at its font size");
+  const plain = await usage("./ui.js", { herdr: { settings: () => ({}) } });
+  assert.equal(plain.mono(), "JetBrains Mono");
+  assert.equal(plain.TERM.base, 13, "no size said: Herdr's defaults");
+});

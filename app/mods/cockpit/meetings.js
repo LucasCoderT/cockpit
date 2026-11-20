@@ -13,7 +13,7 @@ import {
   Toaster, Flashes, Scroller, Hover, Progress, Section, SidePanel, Tabs, Avatar, Spinner, openMenu, alpha, StageHeading, sourceKey, HubDownBody,
 } from "./ui.js";
 
-const mono = () => settings().font ?? "JetBrains Mono";
+const mono = () => settings().font_family ?? "JetBrains Mono";
 const HOUR = 48;
 const ICON = { join: "video", open: "external", brief: "file-text", prepare: "sparkles" };
 const RESPONSE = { accepted: ["Accepted", "success"], tentative: ["Maybe", "warning"], needsAction: ["Not answered", "outline"], declined: ["Declined", "destructive"] };

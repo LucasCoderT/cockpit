@@ -16,7 +16,50 @@ import { layoutName } from "./screens.js";
 const SEEN = new WeakMap();
 
 export const RADIUS = { sm: 4, md: 6, lg: 8, xl: 12 };
-export const TEXT = { xs: 11, sm: 12, base: 13, lg: 15, xl: 18 };
+/** Herdr's own sizes for these, at its default UI text size: every size follows the person's (`ui_font_size`). */
+const TEXT_AT_13 = { xs: 11, sm: 12, base: 13, lg: 15, xl: 18 };
+const scaled = (px, by) => {
+  const size = Number(by);
+  return Number.isFinite(size) && size > 0 ? Math.round((px * size) / 13) : px;
+};
+// Read once a quarter second: a frame asks for sizes hundreds of times, and the person's settings move rarely.
+let looked = { at: 0, value: {} };
+const look = () => {
+  const now = Date.now();
+  if (now - looked.at < 250) return looked.value;
+  try {
+    looked = { at: now, value: settings() ?? {} };
+  } catch {
+    looked = { at: now, value: {} };
+  }
+  return looked.value;
+};
+
+/** The kit's text sizes, px: Herdr's UI text size (settings.json `ui_font_size`) decides them, 13 giving these. */
+export const TEXT = {
+  get xs() { return scaled(TEXT_AT_13.xs, look().ui_font_size); },
+  get sm() { return scaled(TEXT_AT_13.sm, look().ui_font_size); },
+  get base() { return scaled(TEXT_AT_13.base, look().ui_font_size); },
+  get lg() { return scaled(TEXT_AT_13.lg, look().ui_font_size); },
+  get xl() { return scaled(TEXT_AT_13.xl, look().ui_font_size); },
+};
+
+/**
+ * Text sizes that follow Herdr's terminal font size (`font_size`), for what stands in for an agent's terminal (Cockpit
+ * Chat's conversation): the same steps, `base` at the terminal's size.
+ */
+export const TERM = {
+  get xs() { return scaled(TEXT_AT_13.xs, look().font_size); },
+  get sm() { return scaled(TEXT_AT_13.sm, look().font_size); },
+  get base() { return scaled(TEXT_AT_13.base, look().font_size); },
+  get lg() { return scaled(TEXT_AT_13.lg, look().font_size); },
+  get xl() { return scaled(TEXT_AT_13.xl, look().font_size); },
+};
+
+/** Herdr's terminal font (settings.json `font`), for every monospaced piece: code, branches, refs, paths. */
+export const mono = () => look().font_family || "JetBrains Mono";
+// The same, for this module's own components, whose `mono` option would hide the name.
+const monoFamily = mono;
 
 /** The kit's color tokens, shadcn's names on Herdr's theme. */
 export function tokens() {
@@ -1308,7 +1351,7 @@ export function StatTile(id, { label, value, delta, deltaGood, hint, spark, spar
 /** Text in the mono face, for what you would type: branches, keys, numbers. */
 export function Mono(text, { size = TEXT.xs, color } = {}) {
   const k = tokens();
-  return div().flex_none().font_family("JetBrains Mono").text_size(size).text_color(color ?? k.mutedFg).child(String(text ?? ""));
+  return div().flex_none().font_family(monoFamily()).text_size(size).text_color(color ?? k.mutedFg).child(String(text ?? ""));
 }
 
 /** How long ago or how long: `<1m`, `12m`, `3h`, `2d`. */
@@ -1333,7 +1376,7 @@ export function Chip(text, { id, color, mono = false, icon, logo, tooltip, onCli
     .bg(color ? alpha(color, 0.12) : k.muted)
     .text_size(mono ? TEXT.xs : 11.5)
     .text_color(color ?? k.mutedFg)
-    .when(mono, (e) => e.font_family("JetBrains Mono"))
+    .when(mono, (e) => e.font_family(monoFamily()))
     .when(!mono, (e) => e.font_medium());
   if (icon) el = el.child(Icon(icon, { size: 12 }));
   if (logo) el = el.child(AgentLogo(logo, { size: 12, color: color ?? k.mutedFg }));
@@ -1360,7 +1403,7 @@ export function CountPill(n, { on = true } = {}) {
     .justify_center()
     .rounded(9)
     .bg(on ? k.muted : alpha(k.border, 0.6))
-    .font_family("JetBrains Mono")
+    .font_family(monoFamily())
     .text_size(TEXT.xs)
     .font_medium()
     .text_color(on ? k.foreground : k.dim)

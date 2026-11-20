@@ -3,7 +3,7 @@
 
 import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { TEXT, RADIUS, Spinner } from "./ui.js";
+import { TEXT, RADIUS, Spinner, mono } from "./ui.js";
 
 /** The keys that pick a suggestion (1, 2, 3) or put them away (0), bound in the chat's key context while they show. */
 export const NEXT_KEYS = ["1", "2", "3", "0"];
@@ -86,7 +86,7 @@ export function NextSteps(shown, k, { onPick, onDismiss }) {
       .rounded(RADIUS.sm)
       .border_1()
       .border_color(k.border)
-      .font_family("JetBrains Mono")
+      .font_family(mono())
       .text_size(TEXT.xs)
       .text_color(k.dim)
       .child(key);

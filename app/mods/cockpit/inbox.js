@@ -15,8 +15,7 @@ import { sourceOf } from "./startform.js";
 import {
   tokens, TEXT, RADIUS, Icon, Spinner, Badge, Button, PageHeader, SearchField, TextField, KeyHints, Empty,
   Skeleton, Command, Toaster, Flashes, Scroller, Hover, HoverCard, openMenu, alpha, Chip, Mono, ToneButton, Pills,
-  SegBar, Avatar, personColor, Separator, CountPill, Overline, HubDown, sourceKey, HubDownBody, ChoiceKey,
-} from "./ui.js";
+  SegBar, Avatar, personColor, Separator, CountPill, Overline, HubDown, sourceKey, HubDownBody, ChoiceKey, mono } from "./ui.js";
 
 // The agents view, followed once per window whichever copies ask (feed.js).
 const following = sharing(hub.subscribe);
@@ -1250,7 +1249,7 @@ export default class Inbox {
       if (names.length) out.push(this.section(`${names.length} failing test${names.length === 1 ? "" : "s"}`, names.slice(0, 5).map((n) => h_flex().gap(6).items_center().child(Icon("circle-x", { size: 12, color: k.destructive })).child(div().truncate().text_size(TEXT.sm).child(n))), k));
       const lines = log?.lines ?? [];
       if (lines.length || log?.message)
-        out.push(this.section("Failing job's log", [v_flex().p(8).rounded(RADIUS.md).bg(k.muted).children((lines.length ? lines.slice(-6) : [log.message]).map((l) => div().truncate().font_family("JetBrains Mono").text_size(TEXT.xs).text_color(k.mutedFg).child(String(l).replace(/\x1b\[[0-9;]*m/g, ""))))], k));
+        out.push(this.section("Failing job's log", [v_flex().p(8).rounded(RADIUS.md).bg(k.muted).children((lines.length ? lines.slice(-6) : [log.message]).map((l) => div().truncate().font_family(mono()).text_size(TEXT.xs).text_color(k.mutedFg).child(String(l).replace(/\x1b\[[0-9;]*m/g, ""))))], k));
     }
     if (card?.body) out.push(this.section("Description", [div().text_size(TEXT.sm).text_color(k.mutedFg).child(card.body.slice(0, 600))], k));
     out.push(this.section("From the inbox", [this.infoBlock(row, k)], k));

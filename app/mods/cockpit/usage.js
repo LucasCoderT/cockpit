@@ -8,7 +8,7 @@ import { h_flex, v_flex } from "gpui-base";
 import { props, openOverlay, closeOverlay } from "herdr";
 import * as hub from "./hub.js";
 import { ago } from "./fresh.js";
-import { tokens, alpha, TEXT, RADIUS, Icon, Button, Badge, Spinner, KeyHints, PageHeader, Toaster, HubDown, sourceKey, runSource, AgentLogo, iconOf } from "./ui.js";
+import { tokens, alpha, TEXT, RADIUS, Icon, Button, Badge, Spinner, KeyHints, PageHeader, Toaster, HubDown, sourceKey, runSource, AgentLogo, iconOf, mono as monoFont } from "./ui.js";
 
 export function openUsage() {
   openOverlay({ mod: "cockpit", props: { app: "usage" }, kind: "dialog", key: "cockpit-usage", width: 680, height: 0.88 });
@@ -139,7 +139,7 @@ export function QuotaRow(q, { id, labelW = 64, compact = false, onClick, tooltip
         .justify_end()
         .gap(2)
         .text_size(TEXT.xs)
-        .font_family("JetBrains Mono")
+        .font_family(monoFont())
         .text_color(!mono && (q.ahead || q.warn) ? tone : k.mutedFg)
         .when(Boolean(q.ahead), (e) => e.child("▲"))
         .child(valueWords(q)),
@@ -343,14 +343,14 @@ export default class Usage {
         .text_color(strong ? k.foreground : k.mutedFg)
         .when(strong, (e) => e.font_semibold())
         .child(div().w(64).flex_none().child(label))
-        .children(cells.map((c) => (bars ? div().w(120).flex_none() : div().flex_1().min_w(0).truncate()).font_family("JetBrains Mono").child(c)))
+        .children(cells.map((c) => (bars ? div().w(120).flex_none() : div().flex_1().min_w(0).truncate()).font_family(monoFont()).child(c)))
         .child(
           h_flex()
             .when(bars, (e) => e.flex_1())
             .gap(8)
             .items_center()
             .when(bars, (e) => e.child(div().flex_1().h(6).rounded(3).bg(k.muted).child(div().h_full().rounded(3).bg(alpha(k.foreground, 0.35)).w(`${Math.round(bar * 100)}%`))))
-            .child(div().w(56).flex_none().text_right().font_family("JetBrains Mono").child(total)),
+            .child(div().w(56).flex_none().text_right().font_family(monoFont()).child(total)),
         );
     return [
       line("usage-days-head", "", agents.map(name), "estimate", 0),

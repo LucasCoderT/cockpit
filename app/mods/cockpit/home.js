@@ -22,8 +22,7 @@ import { Started } from "./doctor.js";
 import { openUsage, spendTile } from "./usage.js";
 import {
   tokens, TEXT, RADIUS, alpha, Icon, Spinner, Button, Kbd, TextField, Toaster, Flashes, Hover, AlertDialog, HubDown, openMenu,
-  Progress, Mono, dur, Chip, CountPill, StageHeading, Metric, Callout, ToneButton, Skeleton, StatTile, Card, Sparkline, AgentLogo,
-} from "./ui.js";
+  Progress, Mono, dur, Chip, CountPill, StageHeading, Metric, Callout, ToneButton, Skeleton, StatTile, Card, Sparkline, AgentLogo, mono } from "./ui.js";
 
 // The agents, Home and queue views, followed once per window whichever copies ask (feed.js).
 const following = sharing(hub.subscribe);
@@ -683,7 +682,7 @@ export default class Home {
         .border_1()
         .border_color(k.border)
         .bg(k.muted)
-        .child(div().flex_1().min_w(0).font_family("JetBrains Mono").text_size(TEXT.xs).text_color(k.foreground).child(text))
+        .child(div().flex_1().min_w(0).font_family(mono()).text_size(TEXT.xs).text_color(k.foreground).child(text))
         .child(
           Button(`${id}-copy`, {
             icon: "copy",
@@ -1252,7 +1251,7 @@ export default class Home {
           .items_center()
           .child(this.programIcon(a))
           .when(Boolean(card.project), (e) => e.child(Chip(card.project, { color: k.t.ansi4 })))
-          .child(div().flex_1().min_w(0).truncate().font_family("JetBrains Mono").text_size(TEXT.xs).text_color(k.dim).child(a?.branch ?? pr?.branch ?? a?.space_name ?? ""))
+          .child(div().flex_1().min_w(0).truncate().font_family(mono()).text_size(TEXT.xs).text_color(k.dim).child(a?.branch ?? pr?.branch ?? a?.space_name ?? ""))
           .child(Mono(timer, { color: card.stage === "needs" ? tone : card.stage === "ready" ? k.success : k.mutedFg })),
       )
       .child(div().w_full().truncate().text_size(13.5).font_medium().text_color(k.foreground).child(title))

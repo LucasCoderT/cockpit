@@ -10,7 +10,7 @@ import * as hub from "./hub.js";
 import { take } from "./person.js";
 import { sharing } from "./feed.js";
 import { openCode } from "./code.js";
-import { tokens, alpha, TEXT, RADIUS, Icon, Badge, Button, Kbd, Tabs, Empty, Toaster, Spinner, Overline, openMenu } from "./ui.js";
+import { tokens, alpha, TEXT, RADIUS, Icon, Badge, Button, Kbd, Tabs, Empty, Toaster, Spinner, Overline, openMenu, mono } from "./ui.js";
 import { DiffView } from "./diff.js";
 import { CHOICES, SUBJECT, agentsIn, isRow, menuItems, nameOf, newAgentRequest, plainError, recipient, recipientLabel } from "./sendto.js";
 import { layoutName } from "./screens.js";
@@ -484,7 +484,7 @@ export default class Review {
       .child(v_flex().flex_1().min_w(0)
         .child(div().truncate().text_size(TEXT.base).font_semibold().child(name))
         .child(div().truncate().text_size(TEXT.xs).text_color(k.mutedFg).child(facts || (this.repo ?? ""))))
-      .when(Boolean(m?.files?.length), (e) => e.child(h_flex().gap(6).items_center().text_size(TEXT.xs).font_family("JetBrains Mono")
+      .when(Boolean(m?.files?.length), (e) => e.child(h_flex().gap(6).items_center().text_size(TEXT.xs).font_family(mono())
         .child(div().text_color(k.mutedFg).child(`${m.files.length} file${m.files.length === 1 ? "" : "s"}`))
         .child(div().text_color(k.success).child(`+${m.added}`)).child(div().text_color(k.destructive).child(`−${m.removed}`))))
       .when(Boolean(this.loading), (e) => e.child(Spinner({ size: 12, color: k.mutedFg })))
@@ -578,7 +578,7 @@ export default class Review {
           .when(!w.fresh, (e) => e.child(Button("review-regen", { label: narrow ? undefined : "Regenerate", icon: "refresh", size: narrow ? "icon-sm" : "sm", variant: "outline", tooltip: "The changes moved on since this was written", onClick: (_e, cx) => this.generate(cx) })))
           .child(Button("review-copy", { icon: "copy", size: "icon-sm", variant: "ghost", tooltip: "Copy as Markdown", onClick: (_e, cx) => this.copyMarkdown(cx) })))
         .when(Boolean(s?.text), (e) => e.child(div().text_size(TEXT.base).text_color(k.foreground).child(s.text)))
-        .when(Boolean(s?.uncovered), (e) => e.children((w.uncovered ?? []).filter((u) => u.note).map((u) => h_flex().gap(6).text_size(TEXT.sm).child(div().font_family("JetBrains Mono").text_color(k.mutedFg).child(u.path)).child(div().child(u.note)))))
+        .when(Boolean(s?.uncovered), (e) => e.children((w.uncovered ?? []).filter((u) => u.note).map((u) => h_flex().gap(6).text_size(TEXT.sm).child(div().font_family(mono()).text_color(k.mutedFg).child(u.path)).child(div().child(u.note)))))
         .children((s?.notes ?? []).map((n) => {
           const [label, icon] = NOTE[n.kind] ?? [n.kind, "info"];
           return h_flex().gap(8).p(8).items_start().rounded(RADIUS.md).bg(alpha(k.warning, 0.1)).text_size(TEXT.sm)

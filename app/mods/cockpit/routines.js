@@ -17,8 +17,7 @@ import { modelChoices, asPills, listHint } from "./models.js";
 import {
   tokens, TEXT, RADIUS, Icon, Badge, Button, Kbd, PageHeader, SearchField, TextField, KeyHints, Empty, Skeleton,
   Command, Toaster, Flashes, Scroller, SidePanel, AlertDialog, Chip, Mono, Metric, StageHeading, Progress, Pills, Toggle,
-  Spinner, Callout, openMenu, alpha, Overline, Tiles, HubDownBody, AgentLogo,
-} from "./ui.js";
+  Spinner, Callout, openMenu, alpha, Overline, Tiles, HubDownBody, AgentLogo, mono } from "./ui.js";
 
 const ICONS = { run: "play", stop: "circle-stop", edit: "pencil", open: "file-text", talk: "message-circle", pause: "circle-pause", model: "sparkles", delete: "trash", worktree: "git-branch" };
 const WORD = {
@@ -1116,12 +1115,12 @@ export default class Routines {
         v_flex()
           .gap(4)
           .child(h_flex().gap(6).items_center().child(Icon("shield-check", { size: 13, color: k.mutedFg })).child(div().text_size(TEXT.sm).child("Precheck: runs only when it exits 0")))
-          .child(div().p(8).rounded(RADIUS.md).bg(k.muted).whitespace_normal().font_family("JetBrains Mono").text_size(TEXT.xs).text_color(k.foreground).child(r.precheck)),
+          .child(div().p(8).rounded(RADIUS.md).bg(k.muted).whitespace_normal().font_family(mono()).text_size(TEXT.xs).text_color(k.foreground).child(r.precheck)),
       );
     if (r.budget) out.push(v_flex().gap(4).child(h_flex().justify_between().text_size(TEXT.xs).text_color(k.mutedFg).child("This week").child(`${r.spent} of $${r.budget.toFixed(2)}`)).child(Progress(r.spentWeek / r.budget, { color: r.over ? k.warning : k.success })));
     if (r.tools.length) out.push(h_flex().gap(4).flex_wrap().children(r.tools.map((t) => Chip(t, { mono: true }))));
     out.push(this.section(r.run === "shell" ? "Script" : "Prompt", k));
-    out.push(div().p(10).rounded(RADIUS.md).bg(k.muted).whitespace_normal().text_size(TEXT.sm).text_color(k.foreground).when(r.run === "shell", (e) => e.font_family("JetBrains Mono")).child(r.prompt));
+    out.push(div().p(10).rounded(RADIUS.md).bg(k.muted).whitespace_normal().text_size(TEXT.sm).text_color(k.foreground).when(r.run === "shell", (e) => e.font_family(mono())).child(r.prompt));
     out.push(this.section("Actions", k));
     out.push(this.actionButtons(`d-${r.slug}`, r.acts));
     out.push(h_flex().child(Button(`file-${r.slug}`, { label: "Edit the file", icon: "file-text", variant: "ghost", size: "sm", tooltip: String(r.path), onClick: (_e, cx) => cx.spawn(async (cx) => this.send(cx, "edit", [r.slug])) })));

@@ -13,7 +13,7 @@ import { MOVE_FIRST } from "./person.js";
 import { openInEditor, editorLabel } from "./editor.js";
 import { versions, checkNow, versionLine, openUpdate } from "./update.js";
 import { layoutName } from "./screens.js";
-import { tokens, TEXT, RADIUS, Icon, Button, Badge, Tabs, Skeleton, Spinner, Toaster, Mono, Card, AlertDialog, Toggle, AgentLogo, Pills, TextField, viewport } from "./ui.js";
+import { tokens, TEXT, RADIUS, Icon, Button, Badge, Tabs, Skeleton, Spinner, Toaster, Mono, Card, AlertDialog, Toggle, AgentLogo, Pills, TextField, viewport, mono } from "./ui.js";
 
 // A Herdr without ScrollHandle still draws the sheet; j/k then move without scrolling.
 const ScrollHandle = base.ScrollHandle ?? null;
@@ -274,7 +274,7 @@ function fixAllQuestion(items, left) {
       .gap(6)
       .min_w(0)
       .items_center()
-      .when(Boolean(l.command), (e) => e.child(div().id(`fix-all-command-${i}`).min_w(0).flex_shrink(1).truncate().font_family("JetBrains Mono").text_size(TEXT.xs).text_color(k.foreground).tooltip(l.command).child(l.command)))
+      .when(Boolean(l.command), (e) => e.child(div().id(`fix-all-command-${i}`).min_w(0).flex_shrink(1).truncate().font_family(mono()).text_size(TEXT.xs).text_color(k.foreground).tooltip(l.command).child(l.command)))
       .child(l.command ? div().flex_none().text_size(TEXT.sm).text_color(k.mutedFg).child(l.text) : div().flex_1().min_w(0).whitespace_normal().text_size(TEXT.sm).text_color(k.foreground).child(l.text));
   return {
     title: `Run these ${items.length} fixes?`,

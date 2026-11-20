@@ -42,7 +42,7 @@ export function slugFor(books, agents, focusedTerminal, machine, pane) {
 // The agents view, followed once per window whichever copies ask (feed.js).
 const following = sharing(hub.subscribe);
 
-const mono = () => settings().font ?? "JetBrains Mono";
+const mono = () => settings().font_family ?? "JetBrains Mono";
 const ADDER = "\u0000adder";
 const TONE = {
   done: ["success", "circle-check", (k) => k.success],

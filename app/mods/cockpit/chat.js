@@ -25,7 +25,7 @@ import { statusMark } from "./chat-top.js";
 import { hint, keyText } from "./commands.js";
 import { pasteImage, thumbnail, IMAGE_LINE } from "./paste.js";
 import { TOOK, boxTakesBack } from "./browser.js";
-import { tokens, TEXT, RADIUS, Icon, Spinner, Chip, Empty, Card, Button, HubDown, openMenu, AgentLogo } from "./ui.js";
+import { tokens, TERM as TEXT, RADIUS, Icon, Spinner, Chip, Empty, Card, Button, HubDown, openMenu, AgentLogo, mono } from "./ui.js";
 import { NEXT_KEYS, NextSteps, nextKey, nextShown } from "./next-steps.js";
 
 /** The permission modes the chip wears: what it says, how it looks, and whether the menu offers it. */
@@ -132,7 +132,8 @@ const CEILING = 20_000;
 export const DRAW = 300;
 
 /** The reading column: wide enough for a table, narrow enough to read. */
-const READ_W = 760;
+// The reading column holds as many characters at any text size: 760 px at Herdr's default 13.
+const readW = () => Math.round((760 * TEXT.base) / 13);
 const GUTTER = 24;
 
 /** A message's words split on fences, so code is drawn in a box of its own: Herdr's Markdown draws it square. */
@@ -1072,7 +1073,7 @@ export default class Chat {
     return h_flex()
       .id("chat-paste-note")
       .w_full()
-      .max_w(READ_W)
+      .max_w(readW())
       .px(6)
       .gap(6)
       .items_center()
@@ -1601,7 +1602,7 @@ export default class Chat {
       .child(
         h_flex()
           .w_full()
-          .max_w(READ_W)
+          .max_w(readW())
           .gap(8)
           .items_center()
           .text_size(TEXT.sm)
@@ -1610,7 +1611,7 @@ export default class Chat {
           .child(AgentLogo(row, { size: 14, tooltip: row.agent_name, id: "chat-head-logo" }))
           .child(div().flex_shrink(1).min_w(120).truncate().font_medium().text_color(k.foreground).child(row.title || row.tab?.name || this.target || ""))
           .when(Boolean(place), (e) => e.child(sep()).child(div().flex_none().max_w(140).truncate().child(place)))
-          .when(Boolean(branch), (e) => e.child(sep()).child(div().flex_shrink(1).min_w(0).truncate().font_family("JetBrains Mono").text_size(TEXT.xs).child(branch)))
+          .when(Boolean(branch), (e) => e.child(sep()).child(div().flex_shrink(1).min_w(0).truncate().font_family(mono()).text_size(TEXT.xs).child(branch)))
           .when(Boolean(pr), (e) =>
             e.child(sep()).child(
               h_flex()
@@ -1766,7 +1767,7 @@ export default class Chat {
         h_flex()
           .id(id)
           .w_full()
-          .max_w(READ_W)
+          .max_w(readW())
           .gap(8)
           .px(12)
           .py(6)
@@ -1784,12 +1785,12 @@ export default class Chat {
 
   /** The hub does not answer: say so where the conversation goes, with the way to start it. */
   hubDown(k) {
-    return HubDown("chat-hub-down", this, String(this.lastHubError ?? this.hubState).replace(/^error: /, ""), k, { maxW: READ_W });
+    return HubDown("chat-hub-down", this, String(this.lastHubError ?? this.hubState).replace(/^error: /, ""), k, { maxW: readW() });
   }
 
   /** Every row is laid in the same reading column, whatever it holds. */
   column(child) {
-    return h_flex().w_full().px(GUTTER).justify_center().child(v_flex().w_full().max_w(READ_W).child(child));
+    return h_flex().w_full().px(GUTTER).justify_center().child(v_flex().w_full().max_w(readW()).child(child));
   }
 
   said(row, k) {
@@ -1806,7 +1807,7 @@ export default class Chat {
         .when(pics.length > 0, (e) => e.child(h_flex().flex_wrap().justify_end().gap(6).children(pics.map((p) => this.picture(p, 120, k)))))
         .when(Boolean(text), (e) => e.child(
           v_flex()
-            .max_w(READ_W * 0.78)
+            .max_w(readW() * 0.78)
             .px(16)
             .py(11)
             .rounded(20)
@@ -1873,7 +1874,7 @@ export default class Chat {
           .overflow_x_scroll()
           .px(12)
           .py(10)
-          .font_family("JetBrains Mono")
+          .font_family(mono())
           .text_size(TEXT.sm)
           .text_color(k.foreground)
           .child(v_flex().children(text.split("\n").map((line) => div().whitespace_nowrap().child(line.replace(/\t/g, "    ") || " ")))),
@@ -1910,7 +1911,7 @@ export default class Chat {
         .child(
           c.about
             ? div().flex_1().min_w(0).truncate().text_color(k.mutedFg).child(c.about)
-            : div().flex_1().min_w(0).truncate().font_family("JetBrains Mono").text_size(TEXT.xs).text_color(k.mutedFg).child(c.summary || "—"),
+            : div().flex_1().min_w(0).truncate().font_family(mono()).text_size(TEXT.xs).text_color(k.mutedFg).child(c.summary || "—"),
         )
         .child(div().flex_none().child(mark(c)));
     const note = (n, i) =>
@@ -1929,7 +1930,7 @@ export default class Chat {
         .w_full()
         .min_w(0)
         .child(div().w_full().truncate().text_size(TEXT.sm).text_color(k.foreground).child(label))
-        .when(Boolean(detail), (e) => e.child(div().w_full().truncate().font_family("JetBrains Mono").text_size(TEXT.xs).text_color(k.mutedFg).child(detail)));
+        .when(Boolean(detail), (e) => e.child(div().w_full().truncate().font_family(mono()).text_size(TEXT.xs).text_color(k.mutedFg).child(detail)));
     const now = (s) =>
       s.step
         ? line(s.step.label, s.step.detail)
@@ -1943,7 +1944,7 @@ export default class Chat {
                 .flex_1()
                 .min_w(0)
                 .child(div().w_full().truncate().text_size(TEXT.sm).text_color(k.foreground).child(s.call.about || s.call.name))
-                .child(div().w_full().truncate().font_family("JetBrains Mono").text_size(TEXT.xs).text_color(k.mutedFg).child(`${s.call.about ? `${s.call.name} · ` : ""}${s.call.summary || "—"}`)),
+                .child(div().w_full().truncate().font_family(mono()).text_size(TEXT.xs).text_color(k.mutedFg).child(`${s.call.about ? `${s.call.name} · ` : ""}${s.call.summary || "—"}`)),
             )
             .child(div().flex_none().pt(3).child(mark(s.call)))
         : div().w_full().text_size(TEXT.sm).text_color(k.mutedFg).child(TextView.markdown(`chat-s${row.slot}-now`, s.note.text).selectable(true).text_size(TEXT.sm));
@@ -2154,7 +2155,7 @@ export default class Chat {
         .child(
           v_flex()
             .w_full()
-            .max_w(READ_W)
+            .max_w(readW())
             .gap(4)
             .when(queued.length > 0, (e) => e.child(div().text_size(TEXT.xs).text_color(k.dim).child(`${queued.length} waiting to be sent`)))
             .when(Boolean(pausedRow), (e) => e.child(pausedRow))
@@ -2214,7 +2215,7 @@ export default class Chat {
     return h_flex()
       .id("chat-sent")
       .w_full()
-      .max_w(READ_W)
+      .max_w(readW())
       .px(6)
       .gap(6)
       .items_center()
@@ -2364,7 +2365,7 @@ export default class Chat {
         e.child(
           v_flex()
             .w_full()
-            .max_w(READ_W)
+            .max_w(readW())
             .p(4)
             .gap(1)
             .rounded(RADIUS.lg)
@@ -2393,19 +2394,19 @@ export default class Chat {
         ),
       )
       .when(this.files.length > 0, (e) =>
-        e.child(h_flex().w_full().max_w(READ_W).gap(5).items_center().overflow_x_scroll().children(this.fileChips(k))),
+        e.child(h_flex().w_full().max_w(readW()).gap(5).items_center().overflow_x_scroll().children(this.fileChips(k))),
       )
       .when(Boolean(this.pasteNote), (e) => e.child(this.pasteLine(k)))
       .when(Boolean(this.sent) || Boolean(this.editing) || Boolean(this.session()?.paused), (e) => e.child(this.sendLine(k)))
-      .when(cited.length > 0, (e) => e.child(h_flex().w_full().max_w(READ_W).gap(1).items_center().justify_end().children(cited)))
+      .when(cited.length > 0, (e) => e.child(h_flex().w_full().max_w(readW()).gap(1).items_center().justify_end().children(cited)))
       .when(Boolean(offer), (e) =>
-        e.child(div().w_full().max_w(READ_W).px(4).child(NextSteps(offer, k, { onPick: (prompt, cx) => this.fillNext(prompt, cx), onDismiss: (cx) => (this.dismissNext(offer), cx.notify()) }))),
+        e.child(div().w_full().max_w(readW()).px(4).child(NextSteps(offer, k, { onPick: (prompt, cx) => this.fillNext(prompt, cx), onDismiss: (cx) => (this.dismissNext(offer), cx.notify()) }))),
       )
       .child(
         v_flex()
           .id("chat-box")
           .w_full()
-          .max_w(READ_W)
+          .max_w(readW())
           .px(16)
           .pt(14)
           .pb(10)
@@ -2532,7 +2533,7 @@ export default class Chat {
     const nobody = () => {
       // The setup checklist is read the first time this empty state shows, not before; the box starts work meanwhile.
       this.started.want(cx);
-      return this.starter.body(k, { width: READ_W, gutter: GUTTER, below: this.started.el({ compact: true }) });
+      return this.starter.body(k, { width: readW(), gutter: GUTTER, below: this.started.el({ compact: true }) });
     };
     // The hub down, an agent followed draws the hub's state rather than the start form its missing row would give.
     const waiting = (!live && !this.value) || (down && !row && Boolean(this.target) && this.target !== BLANK);
@@ -2576,6 +2577,8 @@ export default class Chat {
               .when((this.hasEarlier() || all[0]?.key !== rows[0]?.key) && (this.loadingEarlier || this.maxTop() <= 0 || (!this.pinned && this.top <= 40)), (e) => e.child(this.earlierPill(k)))
               .when(!this.pinned, (e) => e.child(this.newPill(k, unseen)));
     return v_flex()
+      // The conversation stands in for the agent's terminal: Herdr's terminal font, at its size (TERM).
+      .font_family(mono())
       .id("chat")
       .relative()
       .size_full()
@@ -2635,7 +2638,7 @@ export default class Chat {
           }),
         ),
       )
-      .when(down && Boolean(live || this.value), (e) => e.child(h_flex().w_full().px(GUTTER).pt(6).justify_center().child(div().w_full().max_w(READ_W).child(this.hubDown(k)))))
+      .when(down && Boolean(live || this.value), (e) => e.child(h_flex().w_full().px(GUTTER).pt(6).justify_center().child(div().w_full().max_w(readW()).child(this.hubDown(k)))))
       .on_mouse_down("left", (_e, cx) => ((this.pointed = false), cx.notify()))
       .on_key_down((e, cx) => {
         if (this.pressed(e, cx)) {
@@ -2646,9 +2649,9 @@ export default class Chat {
       .child(body)
       .children(this.queuedRows(k))
       // A dismissal's Undo, above the card it came from: the chat keeps key hints out of it, as everywhere here.
-      .when(Boolean(UndoRow("chat-undo", this.model)), (e) => e.child(h_flex().w_full().px(GUTTER).pt(8).justify_center().child(div().w_full().max_w(READ_W).child(UndoRow("chat-undo", this.model)))))
+      .when(Boolean(UndoRow("chat-undo", this.model)), (e) => e.child(h_flex().w_full().px(GUTTER).pt(8).justify_center().child(div().w_full().max_w(readW()).child(UndoRow("chat-undo", this.model)))))
       .when(Boolean(row?.question || row?.waits), (e) =>
-        e.child(h_flex().w_full().px(GUTTER).pt(8).justify_center().child(div().w_full().max_w(READ_W).child(QuestionCard(`chat-card-${row.terminal}-${row.question?.ask ?? row.question?.text?.length ?? ""}`, row, this.model, { wide: true, focus: this.cardFocus })))),
+        e.child(h_flex().w_full().px(GUTTER).pt(8).justify_center().child(div().w_full().max_w(readW()).child(QuestionCard(`chat-card-${row.terminal}-${row.question?.ask ?? row.question?.text?.length ?? ""}`, row, this.model, { wide: true, focus: this.cardFocus })))),
       )
       .child(this.composer(k))
       .when(Boolean(this.confirm), (e) => e.child(this.fullAccess(k, this.confirm)));
