@@ -334,6 +334,11 @@ pub fn pick(s: &Sources, auto: bool) -> (String, Source) {
     if auto && let Some(name) = s.opening.and_then(opening) {
         return (name, Source::Prompt);
     }
+    // The name cockpit gave the tab in an earlier round (a resumed session's fresh transcript says nothing yet) beats
+    // the agent's bare name.
+    if !bare.is_empty() && !default_label(bare, &s.agent) && owner(tab, s.given) == Owner::Cockpit {
+        return (bare.to_string(), Source::Agent);
+    }
     let fallback = if s.agent_name.trim().is_empty() { "The agent" } else { s.agent_name };
     (fallback.to_string(), Source::Default)
 }
@@ -491,6 +496,9 @@ mod tests {
         assert_eq!(pick(&program, true), ("Claude Code".into(), Source::Default), "a renamer's label of the program names nothing");
         let indexed = Sources { label: "[1] Debug transient issue", ..base.clone() };
         assert_eq!(pick(&indexed, true), ("Debug transient issue".into(), Source::Person));
+        let kept = Sources { label: "quotas", given: Some("quotas"), ..base.clone() };
+        assert_eq!(pick(&kept, true), ("quotas".into(), Source::Agent), "cockpit's own label when nothing else names it");
+        assert!(!writes(kept.label, kept.given, "quotas", Source::Agent), "and it is not written again");
     }
 
     #[test]

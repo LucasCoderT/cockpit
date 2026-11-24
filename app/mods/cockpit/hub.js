@@ -341,7 +341,9 @@ async function open(fresh, state, cx, tried = {}) {
   tried.info = info;
   step();
   if (state?.stopped) throw new Error("subscription stopped");
-  const connecting = net.connect(machine ? host : (info.host ?? "127.0.0.1"), info.port).then(adopt);
+  // A forwarded hub's own machine writes on its `local` port: the forwarded one reads only.
+  const at = machine ? [host, info.port] : info.local ? ["127.0.0.1", info.local] : [info.host ?? "127.0.0.1", info.port];
+  const connecting = net.connect(...at).then(adopt);
   let socket;
   try {
     socket = await within(cx, connecting, 10_000, "the cockpit hub");

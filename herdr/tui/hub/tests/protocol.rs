@@ -195,6 +195,17 @@ fn a_forwarded_hub_listens_on_loopback_names_the_forwarded_address_and_reads_onl
     assert_eq!(ask(json!({"op": "ping", "token": info["token"]})), json!({"ok": true}));
     let refused = ask(json!({"op": "store.put", "name": "meetings", "value": {"items": ["one"]}, "token": info["token"]}));
     assert!(refused["error"].as_str().unwrap().contains("reads only"), "{refused}");
+    // This machine's own window writes on the local port hub.json names beside it.
+    let local = info["local"].as_u64().expect("a local port in hub.json") as u16;
+    assert_ne!(local, port);
+    let mut writer = std::net::TcpStream::connect(("127.0.0.1", local)).unwrap();
+    writer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let mut answers = BufReader::new(writer.try_clone().unwrap());
+    writeln!(writer, "{}", json!({"op": "store.put", "name": "meetings", "value": {"items": ["one"]}, "token": info["token"]})).unwrap();
+    let mut line = String::new();
+    answers.read_line(&mut line).unwrap();
+    let written: Value = serde_json::from_str(&line).unwrap();
+    assert!(written["error"].is_null(), "{written}");
 }
 
 #[test]

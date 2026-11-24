@@ -18,7 +18,8 @@ Claude Code sessions that run on others (runners), with cockpit's hub on each ru
 - **`"hubForward": "<ip>"`** (with `"hubPort"`, default 47821) in a runner's config: the hub listens on loopback at
   that port, hub.json gives desks `<ip>`, and `tailscale serve --tcp` forwards it. macOS's firewall holds incoming
   connections for cockpit's ad-hoc-signed binary until someone approves it on the runner's screen, again after every
-  update; loopback and Tailscale's own process are past it. `scripts/desk.sh runner` sets this up.
+  update; loopback and Tailscale's own process are past it. `scripts/desk.sh runner` sets this up. That port reads
+  only; the runner's own Herdr window writes on a second loopback port, hub.json's `local`, which nothing forwards.
 - **Notifications reach the desk.** Behind other windows, a remote desk posts a runner's notification as a system
   notification on the desk (the Cockpit notifier on macOS, `notify-send` on Linux), and a click on it
   (`cockpit focus herdr-app:<row>`) is handed to the desk's mod.

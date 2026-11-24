@@ -166,30 +166,33 @@ pub(crate) fn token() -> std::io::Result<String> {
 /// The port a forwarded hub takes on loopback when the config names none.
 const FORWARD_PORT: u16 = 47821;
 
-/// The hub's TCP side: what it listens on, the address hub.json gives desks, and whether it serves reads only.
+/// The hub's TCP side: what it listens on, the address hub.json gives desks, and whether it serves reads only. A
+/// forwarded hub also takes a loopback port the forwarder never reaches (`local`), where this machine's own window writes.
 struct Tcp {
     listener: TcpListener,
     host: std::net::IpAddr,
     read_only: bool,
+    local: Option<TcpListener>,
 }
 
 /// Takes the desktop protocol's port. A runner whose config says `hubForward` listens on loopback at `hubPort` (a
 /// forwarder such as `tailscale serve` brings desks there, past the system firewall that holds an unsigned binary's
-/// incoming connections) and serves reads only, as any connection may be a desk's. Otherwise loopback, or
-/// COCKPIT_HUB_LISTEN's explicit interface, else the config's `hubListen`.
+/// incoming connections) and serves reads only, as any connection may be a desk's; its own window writes on a second
+/// loopback port. Otherwise loopback, or COCKPIT_HUB_LISTEN's explicit interface, else the config's `hubListen`.
 fn listen() -> std::io::Result<Tcp> {
     let forward = cockpit_core::files::setting("hubForward");
     if let Some(forward) = forward.as_str().filter(|f| !f.trim().is_empty()) {
         let host: std::net::IpAddr = forward.trim().parse().map_err(|_| std::io::Error::other("hubForward must be an IP address"))?;
         let port = cockpit_core::files::setting("hubPort").as_u64().and_then(|p| u16::try_from(p).ok()).filter(|p| *p > 0).unwrap_or(FORWARD_PORT);
-        return Ok(Tcp { listener: bind_retrying((std::net::Ipv4Addr::LOCALHOST, port).into())?, host, read_only: true });
+        let listener = bind_retrying((std::net::Ipv4Addr::LOCALHOST, port).into())?;
+        return Ok(Tcp { listener, host, read_only: true, local: Some(TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?) });
     }
     let host = listen_host(std::env::var("COCKPIT_HUB_LISTEN").ok(), &cockpit_core::files::setting("hubListen"));
     let host: std::net::IpAddr = host.parse().map_err(|_| std::io::Error::other("COCKPIT_HUB_LISTEN must be an IP address"))?;
     if host.is_unspecified() || host.is_multicast() {
         return Err(std::io::Error::other("COCKPIT_HUB_LISTEN must name one interface, not a wildcard or multicast address"));
     }
-    Ok(Tcp { listener: TcpListener::bind((host, 0))?, host, read_only: !host.is_loopback() })
+    Ok(Tcp { listener: TcpListener::bind((host, 0))?, host, read_only: !host.is_loopback(), local: None })
 }
 
 /// A fixed port a hub handing over may still hold for a moment: tried again for a few seconds.
@@ -212,17 +215,31 @@ fn listen_host(var: Option<String>, configured: &serde_json::Value) -> String {
         .unwrap_or_else(|| "127.0.0.1".into())
 }
 
-/// Serves that port: hub.json carries the token each request needs, and off loopback the connection reads only.
-fn serve_tcp(Tcp { listener, host, read_only }: Tcp, last: Arc<AtomicU64>) -> std::io::Result<()> {
+/// Serves that port: hub.json carries the token each request needs, and off loopback the connection reads only. A
+/// forwarded hub's `local` port, named in hub.json too, serves everything.
+fn serve_tcp(Tcp { listener, host, read_only, local }: Tcp, last: Arc<AtomicU64>) -> std::io::Result<()> {
     let port = listener.local_addr()?.port();
     let token = token()?;
-    let info = serde_json::json!({"host": host.to_string(), "port": port, "token": token, "pid": std::process::id()});
+    let local_port = local.as_ref().map(|l| l.local_addr().map(|a| a.port())).transpose()?;
+    let mut info = serde_json::json!({"host": host.to_string(), "port": port, "token": token, "pid": std::process::id()});
+    if let Some(local_port) = local_port {
+        info["local"] = local_port.into();
+    }
     let path = tcp_file();
     let tmp = path.with_extension("tmp");
     let _ = std::fs::remove_file(&tmp);
     let written = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&tmp).and_then(|mut f| f.write_all(info.to_string().as_bytes()));
     written.and_then(|_| std::fs::rename(&tmp, &path))?;
     let gate = server::Gate { token: Some(token), frontend: Some(cockpit_core::frontend::Frontend::App), read_only };
+    if let (Some(local), Some(local_port)) = (local, local_port) {
+        accept(local, local_port, server::Gate { read_only: false, ..gate.clone() }, last.clone());
+    }
+    accept(listener, port, gate, last);
+    Ok(())
+}
+
+/// Takes the listener's connections on a thread of its own, each served on another.
+fn accept(listener: TcpListener, port: u16, gate: server::Gate, last: Arc<AtomicU64>) {
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             if STOPPING.load(Ordering::SeqCst) {
@@ -240,7 +257,6 @@ fn serve_tcp(Tcp { listener, host, read_only }: Tcp, last: Arc<AtomicU64>) -> st
             });
         }
     });
-    Ok(())
 }
 
 /// Takes hub.json away when it names this hub.

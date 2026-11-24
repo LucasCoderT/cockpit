@@ -150,8 +150,9 @@ async function startLocal(inst, mark) {
 async function connect(inst, cx) {
   const info = await readInfo(inst, cx);
   if (!info?.port || !info?.token) throw new Error(`${inst.name}'s cockpit hub is not running`);
-  const host = inst.machine ? inst.host : info.host ?? "127.0.0.1";
-  const socket = await deps.within(cx, deps.net.connect(host, info.port), 10_000, `${inst.name}'s cockpit hub`);
+  // This machine's forwarded hub writes on its `local` port (hub.js does the same).
+  const [host, port] = inst.machine ? [inst.host, info.port] : info.local ? ["127.0.0.1", info.local] : [info.host ?? "127.0.0.1", info.port];
+  const socket = await deps.within(cx, deps.net.connect(host, port), 10_000, `${inst.name}'s cockpit hub`);
   return { socket, token: info.token, lines: new deps.Lines(socket, cx?.timer ? () => deps.sleep(cx, 50) : null) };
 }
 
