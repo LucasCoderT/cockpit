@@ -8,15 +8,64 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
-/// Every process as `pid → (parent, name)`, or an empty table when `ps` fails.
+/// Every process as `pid → (parent, name)`: `ps`'s, else the kernel's own when `ps` fails or runs out of time, as on a
+/// machine under heavy load.
 pub fn table() -> HashMap<u32, (u32, String)> {
     // By its own path: a PATH the hub was started with cannot hand it another `ps`, or none.
     let text = ps(&["-A", "-o", "pid=,ppid=,comm="]).unwrap_or_default();
-    text.lines()
+    let listed: HashMap<u32, (u32, String)> = text
+        .lines()
         .filter_map(|l| {
             let mut w = l.split_whitespace();
             let (pid, parent) = (w.next()?.parse().ok()?, w.next()?.parse().ok()?);
             Some((pid, (parent, w.collect::<Vec<_>>().join(" "))))
+        })
+        .collect();
+    if listed.is_empty() { kernel_table() } else { listed }
+}
+
+/// The process table from the kernel, with no process started: each process's parent and short name (`p_comm`).
+#[cfg(target_os = "macos")]
+fn kernel_table() -> HashMap<u32, (u32, String)> {
+    // SAFETY: a null buffer asks how many pids there are; the second call writes at most `pids.len()` of them.
+    let count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
+    if count <= 0 {
+        return HashMap::new();
+    }
+    let mut pids = vec![0 as libc::pid_t; count as usize + 64];
+    let bytes = (pids.len() * std::mem::size_of::<libc::pid_t>()) as libc::c_int;
+    let n = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast(), bytes) };
+    pids.truncate(n.max(0) as usize);
+    pids.into_iter()
+        .filter(|pid| *pid > 0)
+        .filter_map(|pid| {
+            // SAFETY: proc_bsdshortinfo is plain data, zeroed then filled by proc_pidinfo up to its own size.
+            let mut info: libc::proc_bsdshortinfo = unsafe { std::mem::zeroed() };
+            let size = std::mem::size_of::<libc::proc_bsdshortinfo>() as libc::c_int;
+            let got = unsafe { libc::proc_pidinfo(pid, libc::PROC_PIDT_SHORTBSDINFO, 0, (&raw mut info).cast(), size) };
+            if got != size {
+                return None;
+            }
+            let comm: Vec<u8> = info.pbsi_comm.iter().take_while(|c| **c != 0).map(|c| *c as u8).collect();
+            Some((pid as u32, (info.pbsi_ppid, String::from_utf8_lossy(&comm).into_owned())))
+        })
+        .collect()
+}
+
+/// The process table from /proc, with no process started: each process's parent and short name.
+#[cfg(not(target_os = "macos"))]
+fn kernel_table() -> HashMap<u32, (u32, String)> {
+    let Ok(entries) = std::fs::read_dir("/proc") else { return HashMap::new() };
+    entries
+        .flatten()
+        .filter_map(|e| e.file_name().to_str()?.parse::<u32>().ok())
+        .filter_map(|pid| {
+            // `pid (comm) state ppid …`, where comm may hold spaces and parentheses: the last ')' ends it.
+            let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+            let (head, rest) = stat.rsplit_once(')')?;
+            let name = head.split_once('(')?.1.to_string();
+            let parent = rest.split_whitespace().nth(1)?.parse().ok()?;
+            Some((pid, (parent, name)))
         })
         .collect()
 }
@@ -566,6 +615,18 @@ mod tests {
     /// Set on this test binary run again to walk from a pid, with the result written where WALK_OUT says.
     const WALK: &str = "COCKPIT_TEST_WALK";
     const WALK_OUT: &str = "COCKPIT_TEST_WALK_OUT";
+
+    #[test]
+    fn the_kernel_lists_every_process_with_its_parent_when_ps_cannot() {
+        let kernel = super::kernel_table();
+        let own = std::process::id();
+        // SAFETY: getppid takes nothing and cannot fail.
+        let parent = unsafe { libc::getppid() } as u32;
+        assert_eq!(kernel.get(&own).map(|(p, _)| *p), Some(parent), "this process, under its own parent");
+        assert!(kernel.get(&own).is_some_and(|(_, name)| !name.is_empty()), "with its name");
+        let listed = super::table();
+        assert!(kernel.len() * 2 > listed.len(), "about as many processes as ps lists: {} against {}", kernel.len(), listed.len());
+    }
 
     /// A walk from WALK's pid in a process of its own, whose environment (its PATH) the test chose.
     #[test]
