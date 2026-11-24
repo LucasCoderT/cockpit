@@ -5,8 +5,11 @@ Each version is tagged `v<version>` and has a GitHub release with these notes, b
 plugin, share the version with the apps (`herdr/tui/Cargo.toml`), whose binaries the release builds; the section for it
 must be here first.
 
-## Unreleased
+## 1.5.3 (2026-11-24)
 
+- Fork: upstream 1.5.2 merged in: resizable show table columns, plans in the side panel, clickable paths and links in the chat, the Dock badge, named panes, event-driven agents
+- Fork: a runner whose hub is forwarded (`hubForward`) takes actions from its own Herdr window again: the hub also listens on a loopback port nothing forwards, hub.json's `local`, where that window writes
+- Fork: a resumed session keeps the name cockpit gave its tab until its transcript names it, instead of "Claude Code"
 - Fork: the macOS CI jobs run in a workflow of their own (`check-macos`), so a Mac runner GitHub cannot supply no longer fails `check`; the process walk's stand-in test waits 30 s to start on a busy runner
 - Fork: Cockpit Chat's app strip has a Tab tile after Home and Needs you, for the tab's own panes without cmd-alt-t
 - Fork: the mod follows Herdr's fonts: Cockpit Chat's conversation in the terminal font at its size (its reading column widening with it), every monospaced piece in the terminal font instead of JetBrains Mono, and the text sizes after Herdr's UI text size
