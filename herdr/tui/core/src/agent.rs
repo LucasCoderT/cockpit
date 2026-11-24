@@ -29,6 +29,18 @@ pub enum Transcripts {
     Gemini,
 }
 
+/// Where an agent's plan is read whole while it asks to carry it out: the argument of the tool it asks through, the
+/// Markdown file that argument names, or its last message.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Plan {
+    /// The call's `arg` holds the plan as Markdown.
+    Argument { tool: &'static str, arg: &'static str },
+    /// The call's `arg` is the path of the Markdown file holding the plan.
+    File { tool: &'static str, arg: &'static str },
+    /// The plan is its last message, written in its plan mode.
+    LastMessage,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Agent {
     /// Herdr's integration id, also its `program` name (`claude`, `codex`, `opencode`).
@@ -50,6 +62,9 @@ pub struct Agent {
     /// A new session branched from a past one. Empty when unsupported.
     pub fork: Vec<String>,
     pub transcripts: Transcripts,
+    /// Where its plan is read whole while it asks to carry one out. None where it has no plan mode, or none measured
+    /// or documented.
+    pub plan: Option<Plan>,
     /// Non-interactive, on a new branch of a past session. Empty when unsupported.
     pub run_fork: Vec<String>,
     /// Lets an unattended run edit files in its folder without asking. Empty when it has no such switch.
@@ -81,6 +96,10 @@ pub struct Agent {
     pub efforts: Vec<String>,
     /// Its lightest model, which errands such as next steps run on. None where not measured.
     pub light: Option<String>,
+    /// The keys that move it to its next permission mode in its terminal (Claude Code's ⇧⇥). None where not measured.
+    pub cycle: Option<Vec<String>>,
+    /// What typed in its terminal turns its focus view on or off (Claude Code's `/focus`). None where it has none.
+    pub focus: Option<String>,
     /// How an effort level is passed at start, `{effort}`. None where not measured.
     pub effort: Option<Vec<String>>,
     /// How fast mode is set at start: `{fast}` as true or false, `{speed}` as fast or default. Switches without a value
@@ -245,6 +264,7 @@ impl Row<'_> {
             resume: v(self.resume),
             fork: v(self.fork),
             transcripts: self.transcripts,
+            plan: None,
             run_fork: v(self.run_fork),
             edits: v(self.edits),
             add_dir: v(self.add_dir),
@@ -259,6 +279,8 @@ impl Row<'_> {
             offered: vec![],
             efforts: vec![],
             light: None,
+            cycle: None,
+            focus: None,
             effort: None,
             fast: None,
             live: vec![],
@@ -297,6 +319,18 @@ const STREAM: &[(&str, &[&str], &[&str])] = &[
         &["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--replay-user-messages", "--permission-prompt-tool", "stdio"],
         &["--session-id", "{session}"],
     ),
+];
+
+/// Where each agent's plan is read while it asks to carry one out.
+const PLANS: &[(&str, Plan)] = &[
+    // Claude Code 2.1.330 (measured): ExitPlanMode's `plan`, the screen scrolling the plan in a box.
+    ("claude", Plan::Argument { tool: "ExitPlanMode", arg: "plan" }),
+    // Codex 0.96 (developers.openai.com /plan): the plan is the last message of a turn in plan collaboration mode.
+    ("codex", Plan::LastMessage),
+    // Qwen Code (qwenlm.github.io exit-plan-mode): `exit_plan_mode(plan=…)` presents the plan for approval.
+    ("qwen", Plan::Argument { tool: "exit_plan_mode", arg: "plan" }),
+    // Gemini CLI (geminicli.com tools/planning): `exit_plan_mode(plan_path=…)` names the plan file under its plans folder.
+    ("gemini", Plan::File { tool: "exit_plan_mode", arg: "plan_path" }),
 ];
 
 /// How each agent's permission prompts read, as measured: (id, patterns of the text above the menu).
@@ -445,6 +479,10 @@ const PICKS: &[Measured] = &[
     },
 ];
 
+/// How each agent moves to its next permission mode and toggles its focus view in its own terminal, as measured: Claude
+/// Code 2.1.311 cycles auto, manual, accept edits and plan on ⇧⇥, and `/focus` says "Focus view enabled" or "disabled".
+const TERMINAL: &[(&str, &[&str], &str)] = &[("claude", &["shift+tab"], "/focus")];
+
 /// The settings a running session accepts and when each applies: the next model call or by the next turn.
 const LIVE: &[(&str, &[(Setting, &str)])] = &[("claude", &[(Setting::Model, "call"), (Setting::Effort, "turn"), (Setting::Fast, "turn")])];
 
@@ -475,12 +513,16 @@ pub fn builtin() -> Vec<Agent> {
             if let Some((_, shapes)) = PERMISSION.iter().find(|(id, _)| *id == row.id) {
                 agent.permission = v(shapes);
             }
+            agent.plan = PLANS.iter().find(|(id, _)| *id == row.id).map(|(_, plan)| *plan);
             if let Some((_, stream, new_session)) = STREAM.iter().find(|(id, _, _)| *id == row.id) {
                 (agent.stream, agent.new_session) = (Some(v(stream)), v(new_session));
             }
             if let Some(p) = PICKS.iter().find(|p| p.id == row.id) {
                 (agent.offered, agent.efforts, agent.effort, agent.fast) = (v(p.offered), v(p.efforts), control(p.effort), control(p.fast));
                 agent.light = (!p.light.is_empty()).then(|| p.light.to_string());
+            }
+            if let Some((_, cycle, focus)) = TERMINAL.iter().find(|(id, _, _)| *id == row.id) {
+                (agent.cycle, agent.focus) = (control(cycle), (!focus.is_empty()).then(|| focus.to_string()));
             }
             agent.live = LIVE.iter().find(|(id, _)| *id == row.id).map(|(_, l)| l.iter().map(|(setting, _)| *setting).collect()).unwrap_or_default();
             agent.typing = typing(row.id);
@@ -957,6 +999,7 @@ fn laid_over(mut list: Vec<Agent>, overrides: &serde_json::Map<String, Value>) -
             resume: vec![],
             fork: vec![],
             transcripts: Transcripts::None,
+            plan: None,
             run_fork: vec![],
             edits: vec![],
             add_dir: vec![],
@@ -971,6 +1014,8 @@ fn laid_over(mut list: Vec<Agent>, overrides: &serde_json::Map<String, Value>) -
             offered: vec![],
             efforts: vec![],
             light: None,
+            cycle: None,
+            focus: None,
             effort: None,
             fast: None,
             live: vec![],
@@ -1017,8 +1062,17 @@ fn laid_over(mut list: Vec<Agent>, overrides: &serde_json::Map<String, Value>) -
         if let Some(light) = o["light"].as_str() {
             agent.light = (!light.trim().is_empty()).then(|| light.trim().to_string());
         }
+        if let Some(focus) = o["focus"].as_str() {
+            agent.focus = (!focus.trim().is_empty()).then(|| focus.trim().to_string());
+        }
         // An empty list says it has no such control.
-        for (key, field) in [("mode", &mut agent.mode), ("interrupt", &mut agent.interrupt), ("effort", &mut agent.effort), ("fast", &mut agent.fast)] {
+        for (key, field) in [
+            ("mode", &mut agent.mode),
+            ("interrupt", &mut agent.interrupt),
+            ("effort", &mut agent.effort),
+            ("fast", &mut agent.fast),
+            ("cycle", &mut agent.cycle),
+        ] {
             if let Some(list) = strs(&o[key]) {
                 *field = (!list.is_empty()).then_some(list);
             }

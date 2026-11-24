@@ -16,6 +16,7 @@
     "dark": "cockpit-chat"
   },
   "preview": "layouts/cockpit-chat.svg",
+  "link_handlers": ["cockpit"],
   "children": [
     {
       "id": "sidebar",
@@ -74,7 +75,7 @@
       "shadow": "sm"
     },
     {
-      "id": "work",
+      "id": "main-area",
       "type": "column",
       "resizable": false,
       "children": [
@@ -101,7 +102,7 @@
               "id": "work",
               "type": "row",
               "gap": 8,
-              "resizable": false,
+              "resizable": true,
               "children": [
                 {
                   "id": "view",
@@ -219,6 +220,26 @@
                           "type": "block",
                           "content": {
                             "mod": "changes"
+                          }
+                        },
+                        {
+                          "id": "project-files",
+                          "type": "block",
+                          "content": {
+                            "mod": "cockpit",
+                            "props": {
+                              "app": "files"
+                            }
+                          }
+                        },
+                        {
+                          "id": "project-changes",
+                          "type": "block",
+                          "content": {
+                            "mod": "cockpit",
+                            "props": {
+                              "app": "changes"
+                            }
                           }
                         },
                         {

@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use crate::{agent, files, jsonedit};
 
 /// The version the options below arrive in: the one number to change at release.
-pub const NEXT: &str = "1.1.0";
+pub const NEXT: &str = "1.5.0";
 
 /// The side browser that is cockpit's own Chromium window, which only the Herdr app on macOS shows.
 pub const CHROMIUM: &str = "chromium";
@@ -202,7 +202,18 @@ pub const ALL: &[Setting] = &[
         "The model that writes the suggested prompts, such as haiku.",
         "",
         Check::Word,
-        Some("the conversation's own model"),
+        Some("the agent's lightest model"),
+    ),
+    brought(
+        toggle(
+            "chat.projectPanels",
+            "Chat",
+            "Files and Changes follow the agent's projects",
+            "In Cockpit Chat, the side panel's Files and Changes show the repositories the agent works in, even from a \
+             folder of several; off, Herdr's own follow the focused terminal's folder.",
+            true,
+        ),
+        "1.3.0",
     ),
     choice(
         "agents.pace",
@@ -256,6 +267,7 @@ pub const ALL: &[Setting] = &[
         "mine",
         &[("mine", "Mine"), ("all", "All"), ("none", "None")],
     ),
+    brought(toggle("dockBadge", "Notifications", "Count on the Dock icon", "The Herdr app's Dock icon shows how many agents need you, on macOS.", true), NEXT),
     toggle("brief.enabled", "Briefs and recaps", "Morning brief", "Each morning, your meetings, reviews, CI and tickets in one page.", true),
     text("brief.at", "Briefs and recaps", "Morning brief time", "When the morning brief is written, such as 08:30.", "08:30", Check::Time, None),
     toggle("brief.weekends", "Briefs and recaps", "Morning brief on weekends", "The morning brief is written on Saturday and Sunday too.", false),
@@ -320,6 +332,18 @@ pub const ALL: &[Setting] = &[
             "terminal-browser",
             &[("terminal-browser", "In a terminal pane"), (CHROMIUM, "Chromium, docked")],
         ),
+        "1.1.0",
+    ),
+    brought(
+        choice(
+            "links.open",
+            "Apps",
+            "Links clicked in a terminal",
+            "Where a Cmd-click (Ctrl-click) on a web link in a Herdr app terminal opens it: your browser, or the side browser \
+             beside that terminal.",
+            "browser",
+            &[("browser", "Your browser"), ("side", "The side browser")],
+        ),
         NEXT,
     ),
     toggle(
@@ -370,6 +394,7 @@ pub const IN_FILE: &[(&str, &str)] = &[
     ("deployWatch", "The check after a deploy: tools, agent."),
     ("runbookTools", "Extra tools a runbook's background refresh may use."),
     ("footer.links", "The links under Claude Code's prompt: on in a terminal, off in the Herdr app."),
+    ("artifactGuard", "false lets every claude.ai artifact through, for a machine with no pane to draw in."),
     ("frontend", "tui or app, when cockpit cannot tell which it runs in."),
 ];
 
@@ -820,8 +845,13 @@ mod tests {
         let order: Vec<usize> = ALL.iter().map(|s| SECTIONS.iter().position(|name| *name == s.section).unwrap()).collect();
         assert!(order.windows(2).all(|w| w[0] <= w[1]), "the options are listed section by section");
         assert!(SECTIONS.iter().all(|name| ALL.iter().any(|s| s.section == *name)), "no empty section");
-        assert_eq!(since("0.40.3").iter().map(|s| s.key).collect::<Vec<_>>(), ["queue.drain", "ci.tellAgents", "chat.nextSteps", "sideBrowser"]);
-        assert_eq!(since("1.0.1").iter().map(|s| s.key).collect::<Vec<_>>(), ["sideBrowser"]);
+        assert_eq!(
+            since("0.40.3").iter().map(|s| s.key).collect::<Vec<_>>(),
+            ["queue.drain", "ci.tellAgents", "chat.nextSteps", "chat.projectPanels", "dockBadge", "sideBrowser", "links.open"]
+        );
+        assert_eq!(since("1.0.1").iter().map(|s| s.key).collect::<Vec<_>>(), ["chat.projectPanels", "dockBadge", "sideBrowser", "links.open"]);
+        assert_eq!(since("1.2.0").iter().map(|s| s.key).collect::<Vec<_>>(), ["chat.projectPanels", "dockBadge", "links.open"]);
+        assert_eq!(since("1.4.1").iter().map(|s| s.key).collect::<Vec<_>>(), ["dockBadge", "links.open"]);
         assert_eq!(get("chat.nextSteps").map(|s| s.default), Some(Def::Off));
         assert!(get("nope").is_none());
         for (key, line) in IN_FILE {
@@ -1169,7 +1199,8 @@ mod tests {
             (&names["section"], &names["kind"], &names["since"], &names["seen"], &names["new"]),
             (&json!("Agents"), &json!("toggle"), &Value::Null, &json!(true), &json!(false))
         );
-        assert_eq!((&option("queue.drain")["since"], &option("sideBrowser")["since"]), (&json!("1.0.0"), &json!(NEXT)));
+        assert_eq!((&option("queue.drain")["since"], &option("chat.projectPanels")["since"]), (&json!("1.0.0"), &json!("1.3.0")));
+        assert_eq!(option("links.open")["since"], json!(NEXT));
         let pace = option("agents.pace");
         assert_eq!(pace["choices"], json!([{"value": "week", "label": "Whole week"}, {"value": "weekdays", "label": "Weekdays"}]));
         let every = option("refresh.github");

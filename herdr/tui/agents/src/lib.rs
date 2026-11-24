@@ -6,12 +6,14 @@
 
 pub mod chat;
 pub mod cli;
+pub mod events;
 pub mod gui;
 pub mod ledger;
 pub mod links;
 pub mod load;
 pub mod next;
 pub mod place;
+pub mod plans;
 pub mod prompt;
 pub mod recap;
 pub mod session;

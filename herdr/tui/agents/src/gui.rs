@@ -17,6 +17,7 @@ use cockpit_core::{files, names};
 use regex::Regex;
 use serde_json::{Value, json};
 
+use crate::events;
 use crate::ledger::{self, Ledger};
 use crate::place;
 use crate::prompt::{self, Cursor, Question};
@@ -181,12 +182,24 @@ pub fn start(touch: fn()) {
     }
     std::thread::spawn(|| {
         ledger::trim(&ledger::path(), now_ms());
+        // The sender stays here too, so the wait below times out rather than ends when nothing follows the core.
+        let (tx, rx) = std::sync::mpsc::channel();
+        if term::demo().is_none() {
+            events::follow(tx.clone());
+        }
         loop {
+            let looked = std::time::Instant::now();
             if poll() {
                 self::touch();
             }
             let app = frontend::app_home().join("herdr-app.sock").exists();
-            std::thread::sleep(Duration::from_secs(if app { 2 } else { 4 }));
+            let blocked = snap().agents.iter().any(|a| a.live.status == "blocked");
+            let tui = app && events::following() && term::tui_running();
+            if rx.recv_timeout(events::wait(app, events::following(), tui, blocked)).is_ok() {
+                // A burst of changes makes one look, and looks stay a second apart at least.
+                std::thread::sleep(Duration::from_secs(1).saturating_sub(looked.elapsed()).max(Duration::from_millis(150)));
+                while rx.try_recv().is_ok() {}
+            }
         }
     });
 }
@@ -287,7 +300,17 @@ pub fn poll() -> bool {
             if live.status == "blocked"
                 && let Some(screen) = term::screen(&live.handle, 0)
             {
-                let q = prompt::read_for(&screen, &prompt::Shapes::of(&live.agent));
+                let mut q = prompt::read_for(&screen, &prompt::Shapes::of(&live.agent));
+                // A plan approval shows the whole plan from the transcript: its screen scrolls only part of it.
+                if q.permission
+                    && let Some((plan, session)) = plan_of(&live, &facts[&live.handle])
+                {
+                    q.with_plan(&plan);
+                    // Kept as a view of the session, where the side panel shows it whole and keeps it once carried out.
+                    if q.markdown && live.frontend == "app" {
+                        q.view = crate::plans::record(&live.address, &session, &live.cwd, &plan);
+                    }
+                }
                 // The frontend's word can stay blocked after the prompt went: the screen and the transcript say what it does.
                 if let Some(status) = past_prompt(&q, prompt::menu_shown(&screen), || turn_of(&live)) {
                     live.status = status.into();
@@ -407,6 +430,25 @@ pub fn past_prompt(q: &Question, menu: bool, turn: impl FnOnce() -> Option<Turn>
 fn turn_of(live: &Live) -> Option<Turn> {
     let agent = cockpit_core::agent::of_program(&live.agent).or_else(|| cockpit_core::agent::of_program(&live.program))?;
     cockpit_core::transcripts::turn(agent.transcripts, std::path::Path::new(live.transcript.as_deref()?))
+}
+
+/// The plan the agent asks to carry out, whole, from its transcript, where its agent's table says it is kept; with the
+/// session it belongs to (the transcript's own name when the session's id is not known).
+fn plan_of(live: &Live, facts: &Value) -> Option<(String, String)> {
+    let agent = cockpit_core::agent::of_program(&live.agent).or_else(|| cockpit_core::agent::of_program(&live.program))?;
+    let session = session_of(live, facts);
+    let transcript = live.transcript.as_ref().map(PathBuf::from).or_else(|| transcript_of(live, facts, session.as_deref()?))?;
+    let plan = cockpit_core::transcripts::plan(agent.plan?, agent.transcripts, &transcript)?;
+    let session = session.or_else(|| transcript.file_stem().map(|s| s.to_string_lossy().into_owned()))?;
+    Some((plan, session))
+}
+
+/// The argument of the tool `agent` asks through before it carries a plan out, when `tool` is that one.
+fn plan_arg(agent: Option<&cockpit_core::agent::Agent>, tool: &str) -> Option<&'static str> {
+    match agent?.plan? {
+        cockpit_core::agent::Plan::Argument { tool: t, arg } if t == tool => Some(arg),
+        _ => None,
+    }
 }
 
 /// What a blocked agent waits on when it asks nothing cockpit can read: a limit it reached, else its terminal. When the
@@ -1006,6 +1048,13 @@ pub fn driven_row(s: &Value, git: Option<&Git>, inbox: &Value, ci: &Value, patte
     let recap = if session.is_empty() { Value::Null } else { recap::shown(session, transcript.as_deref()) };
     let failed = s["ended"].as_str().or(s["failed"].as_str()).map(str::to_string);
     let (status, since) = driven_status(s);
+    let agent = cockpit_core::agent::of_program(s["agent"].as_str().unwrap_or_default());
+    let mut question = asking.clone().map(|a| permission_question(a, agent.as_ref())).unwrap_or(Value::Null);
+    // A plan asked about is kept as a view of the session, as a terminal's is.
+    if question["markdown"] == true {
+        let plan = question["preview"].as_str().unwrap_or_default();
+        question["view"] = json!(crate::plans::record(s["key"].as_str().unwrap_or_default(), session, &cwd, plan));
+    }
     let branch = git.and_then(|g| g.branch.clone());
     let repo = git.map(|g| g.repo.clone()).unwrap_or_default();
     let changes = git.map_or(Value::Null, |g| json!({"files": g.files, "add": g.add, "del": g.del, "ahead": g.ahead, "behind": g.behind}));
@@ -1028,7 +1077,7 @@ pub fn driven_row(s: &Value, git: Option<&Git>, inbox: &Value, ci: &Value, patte
         "stage": stage(status, false, status != "done", &pr, &ci, &changes),
         "interrupted": status == "done", "error": failed, "stoppable": status == "working",
         "interrupt": interrupt_of(s["agent"].as_str().unwrap_or_default()),
-        "question": asking.map(permission_question).unwrap_or(Value::Null), "waits": Value::Null,
+        "question": question, "waits": Value::Null,
         "said": "", "recap": recap, "paused": s["paused"], "cwd": cwd, "branch": branch, "repo": repo,
         "ticket": ticket, "pr": pr, "ci": ci, "changes": changes,
         "cost": s["session"].as_str().and_then(cockpit_core::usage::session_estimate), "session": s["session"].clone(), "seen": true,
@@ -1190,11 +1239,14 @@ fn walk_now(pid: u32) -> place::Walk {
 /// What a request cockpit cannot place is told.
 const UNPLACED: &str = "cockpit cannot tell whether a person sent this, so it takes no answer from it";
 
-/// What an agent asks to be allowed, in full for the card to show: the command, the diff, the file, the plan, the
-/// arguments of an MCP tool.
-pub fn what_it_runs(tool: &str, input: &Value) -> String {
+/// What an agent asks to be allowed, in full for the card to show: the command, the diff, the file, the plan (where
+/// `plan` names its argument), the arguments of an MCP tool.
+pub fn what_it_runs(tool: &str, input: &Value, plan: Option<&str>) -> String {
     let field = |k: &str| input[k].as_str().unwrap_or_default().to_string();
     let lines = |prefix: &str, text: &str| text.lines().map(|l| format!("{prefix}{l}")).collect::<Vec<_>>().join("\n");
+    if let Some(arg) = plan {
+        return field(arg).trim().to_string();
+    }
     let shown = match tool {
         "Bash" => [field("command"), field("description")].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n"),
         "Edit" => format!("{}\n{}\n{}", field("file_path"), lines("- ", &field("old_string")), lines("+ ", &field("new_string"))),
@@ -1206,7 +1258,6 @@ pub fn what_it_runs(tool: &str, input: &Value) -> String {
         }
         "Write" => format!("{}\n{}", field("file_path"), field("content")),
         "NotebookEdit" => format!("{}\n{}", field("notebook_path"), field("new_source")),
-        "ExitPlanMode" => field("plan"),
         "WebFetch" => [field("url"), field("prompt")].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n"),
         _ => serde_json::to_string_pretty(input).unwrap_or_default(),
     };
@@ -1214,14 +1265,15 @@ pub fn what_it_runs(tool: &str, input: &Value) -> String {
 }
 
 /// A permission request in the shape the question card draws: what it wants to run, and the two answers, neither of
-/// them picked.
-fn permission_question(ask: Value) -> Value {
+/// them picked. A plan, told by `agent`'s table, is drawn as Markdown.
+fn permission_question(ask: Value, agent: Option<&cockpit_core::agent::Agent>) -> Value {
     let tool = ask["tool_name"].as_str().unwrap_or("A tool");
     let detail = cockpit_core::transcripts::arg_line(&ask["input"]);
     let text = if detail.is_empty() { format!("May it run {tool}?") } else { format!("May it run {tool}: {detail}?") };
+    let plan = plan_arg(agent, tool);
     json!({
         "text": text, "kind": "single", "permission": true, "cursor": null, "ask": ask["id"].clone(), "unasked": [], "cut": false, "terminal_only": null,
-        "preview": what_it_runs(tool, &ask["input"]),
+        "preview": what_it_runs(tool, &ask["input"], plan), "markdown": plan.is_some(),
         "choices": [{"n": 1, "label": "Allow once"}, {"n": 2, "label": "Deny"}],
     })
 }
@@ -1698,6 +1750,58 @@ fn pick(handle: &str, arg: &Value) -> Result<String, String> {
     done.map(|()| format!("typed {line}"))
 }
 
+/// The agent in a terminal, as cockpit knows it, for an action typed into that terminal; never a session cockpit drives.
+fn terminal_agent(handle: &str) -> Result<(Agent, cockpit_core::agent::Agent), String> {
+    if crate::session::summary(handle).is_some() {
+        return Err("a session cockpit drives changes it from its chat".into());
+    }
+    let a = find(handle).ok_or("no such agent")?;
+    let agent = cockpit_core::agent::of_program(&a.live.program)
+        .or_else(|| cockpit_core::agent::get(&a.live.agent))
+        .ok_or_else(|| format!("cockpit does not know the agent {}", a.live.program))?;
+    Ok((a, agent))
+}
+
+/// Moves an agent to permission mode `mode` in its own terminal: its cycle keys pressed until its footer shows that mode,
+/// never more than once round the cycle, so a mode it does not offer leaves it where it was.
+fn set_mode(handle: &str, arg: &Value) -> Result<String, String> {
+    let want = arg["mode"].as_str().filter(|m| !m.is_empty()).ok_or("which mode? pass {mode}")?;
+    let (a, agent) = terminal_agent(handle)?;
+    let keys = agent.cycle.clone().ok_or_else(|| format!("{} has no known key to change its mode", agent.name))?;
+    if a.live.status == "blocked" {
+        return Err(format!("{} is waiting on a question: change its mode once it is answered", agent.name));
+    }
+    let shapes = prompt::Shapes::of(&a.live.agent);
+    let shown = || term::screen(handle, 0).and_then(|s| prompt::activity(&s, &shapes).mode);
+    let start = shown().ok_or("its footer shows no mode")?;
+    let mut now = start.clone();
+    while now != want {
+        term::keys(handle, &keys)?;
+        let moved = (0..20).find_map(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            shown().filter(|m| *m != now)
+        });
+        now = moved.ok_or("its footer did not change")?;
+        if now == start {
+            return Err(format!("{} offers no {want} mode here", agent.name));
+        }
+    }
+    Ok(format!("in {want} mode"))
+}
+
+/// Turns an agent's focus view on or off in its own terminal (Claude Code's `/focus`), once it rests: typed into a turn
+/// it would wait as a prompt.
+fn toggle_focus(handle: &str) -> Result<String, String> {
+    let (a, agent) = terminal_agent(handle)?;
+    let line = agent.focus.clone().ok_or_else(|| format!("{} has no focus view", agent.name))?;
+    if !matches!(a.live.status.as_str(), "idle" | "done" | "failed") {
+        return Err(format!("{} is {}: change it once it rests", agent.name, if a.live.status == "blocked" { "waiting on a question" } else { "working" }));
+    }
+    let done = cockpit_core::deliver::deliver(handle, &line);
+    log_delivery(handle, &json!({"text": line, "source": "focus"}), &done);
+    done.map(|()| format!("typed {line}"))
+}
+
 /// What an agent's tools asking to dismiss a card are told.
 pub(crate) const DISMISSED_BY_A_PERSON: &str = "a card is dismissed by a person, not by an agent's tools";
 
@@ -1783,7 +1887,7 @@ fn dismiss(handle: &str, wait: Option<&str>, undo: bool) -> Result<String, Strin
 pub fn act(action: &str, args: &[Value]) -> Option<Result<String, String>> {
     let arg = args.first().cloned().unwrap_or(Value::Null);
     let handle = arg["terminal"].as_str().or(arg.as_str()).unwrap_or_default().to_string();
-    let known = ["answer", "deliver", "recap", "snooze", "seen", "dismiss", "fork", "focus", "interrupt", "refresh", "pick"];
+    let known = ["answer", "deliver", "recap", "snooze", "seen", "dismiss", "fork", "focus", "interrupt", "refresh", "pick", "mode", "focus_mode"];
     if !known.contains(&action) {
         return None;
     }
@@ -1801,7 +1905,9 @@ pub fn act(action: &str, args: &[Value]) -> Option<Result<String, String>> {
         "pick" if arg["setting"] == "fast" && arg["value"] == true => {
             by_a_person("fast mode is turned on by a person, not by an agent's tools").and_then(|()| may_touch(&handle))
         }
-        "pick" => may_touch(&handle),
+        "pick" | "focus_mode" => may_touch(&handle),
+        // A mode lets an agent do more or less without asking: a person changes it.
+        "mode" => by_a_person("an agent's mode is changed by a person, not by an agent's tools").and_then(|()| may_touch(&handle)),
         _ => Ok(()),
     };
     if let Err(why) = checked {
@@ -1848,6 +1954,8 @@ pub fn act(action: &str, args: &[Value]) -> Option<Result<String, String>> {
         "fork" => fork(&handle, arg["place"].as_str().unwrap_or("tab")),
         "interrupt" => may_touch(&handle).and_then(|()| interrupt(&handle)),
         "pick" => pick(&handle, &arg),
+        "mode" => set_mode(&handle, &arg),
+        "focus_mode" => toggle_focus(&handle),
         "focus" => {
             let shown = term::demo_path().is_some() || frontend::focus(&handle);
             let mut st = states();
@@ -2179,13 +2287,23 @@ mod tests {
 
     #[test]
     fn a_driven_ask_is_drawn_with_nothing_picked_and_all_it_would_do() {
-        let q = permission_question(json!({"id": "toolu_a", "tool_name": "Bash", "input": {"command": "mix test", "description": "Run the tests"}}));
+        let claude = cockpit_core::agent::of_program("claude");
+        let q = permission_question(
+            json!({"id": "toolu_a", "tool_name": "Bash", "input": {"command": "mix test", "description": "Run the tests"}}),
+            claude.as_ref(),
+        );
         assert_eq!((q["cursor"].clone(), q["ask"].clone(), q["permission"].clone()), (Value::Null, json!("toolu_a"), json!(true)));
         assert_eq!(q["preview"], "mix test\nRun the tests");
-        let edit = what_it_runs("Edit", &json!({"file_path": "/r/api/lib/quota.ex", "old_string": "@limit 100", "new_string": "@limit 200"}));
+        assert_eq!(q["markdown"], false);
+        let plan =
+            permission_question(json!({"id": "toolu_p", "tool_name": "ExitPlanMode", "input": {"plan": "# Quota\n\n1. Add the column"}}), claude.as_ref());
+        assert_eq!((plan["preview"].clone(), plan["markdown"].clone()), (json!("# Quota\n\n1. Add the column"), json!(true)), "a plan is drawn as Markdown");
+        let unknown = permission_question(json!({"id": "toolu_p", "tool_name": "ExitPlanMode", "input": {"plan": "# Quota"}}), None);
+        assert_eq!(unknown["markdown"], false, "an agent with no plan tool in the table shows the input as it is");
+        let edit = what_it_runs("Edit", &json!({"file_path": "/r/api/lib/quota.ex", "old_string": "@limit 100", "new_string": "@limit 200"}), None);
         assert_eq!(edit, "/r/api/lib/quota.ex\n- @limit 100\n+ @limit 200");
-        assert_eq!(what_it_runs("ExitPlanMode", &json!({"plan": "1. Add the column\n2. Read it"})), "1. Add the column\n2. Read it");
-        assert!(what_it_runs("mcp__acme__deploy", &json!({"service": "api", "env": "prod"})).contains("\"env\": \"prod\""), "an MCP tool's whole input");
+        assert_eq!(what_it_runs("ExitPlanMode", &json!({"plan": "1. Add the column\n2. Read it"}), Some("plan")), "1. Add the column\n2. Read it");
+        assert!(what_it_runs("mcp__acme__deploy", &json!({"service": "api", "env": "prod"}), None).contains("\"env\": \"prod\""), "an MCP tool's whole input");
     }
 
     #[test]

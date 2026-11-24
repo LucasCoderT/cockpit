@@ -55,6 +55,7 @@ itself and need no `tools`.
 | `usage.commands` | none | Limits of a provider cockpit has no source for: `{"<agent id>": "<command>"}`, each command printing a JSON list of `{name, percent, resets_at}` (run at most every 10 minutes); its windows show under that agent's logo. |
 | `queue.drain` | `true` | Each prompt queued for an agent goes when its turn ends; `false` sends them only by hand. |
 | `chat.nextSteps` | `false` | After a finished answer, up to three suggested prompts appear above the box; 1, 2, 3 or a click fill it, never send. Works for any agent's conversation: Claude Code answers, with no tools, billed to your own Claude account; `chat.nextStepsAgent` names another agent that runs with no tools once one exists. |
+| `chat.projectPanels` | `true` | In Cockpit Chat, the side panel's Files and Changes are cockpit's: they show the repositories the agent works in, even from a folder of several, the latest first. Off, Herdr's own follow the focused terminal's folder. |
 | `chat.nextStepsModel` | the agent's lightest model | The model next steps run on, at the agent's lowest effort: a name, or one per agent id (`{"claude": "haiku"}`). By default the agent's lightest (`agents.commands.<id>.light`, Haiku for Claude Code), else the session's own. |
 | `ci.tellAgents` | `true` | A CI run that ends red is told to the agent working on its PR, and green after it; `false` tells no agent. |
 | `github.reviewBots` | `false` | `address review` hands bots' review threads over too, after people's. |
@@ -68,10 +69,13 @@ itself and need no `tools`.
 | `names` | `true` | Agents, tabs and spaces named after their work: the name you gave, else the agent's own title, else its first prompt in a few words, never over a tab name you or another tool typed; `false` turns it off. |
 | `fetcher` | `true` | The Claude session the hub keeps for sources it cannot reach itself; `false` turns it off. |
 | `notifications` | `true` | Notifications at all. |
+| `dockBadge` | `true` | On macOS, the Herdr app's Dock icon shows how many agents need you. |
 | `e2eBrowser` | `terminal-browser` | Where an agent runs E2E tests: beside it, or Claude in Chrome. |
 | `browserIdleMinutes` | `60` | A browser whose space stayed out of view this long closes, and a Chromium tab out of view this long sleeps; `0` keeps them. |
 | `sideBrowser` | `terminal-browser` | The browser beside an agent: terminal-browser in a pane, or `chromium`, cockpit's own window docked in the Herdr app on macOS (see [browser.md](browser.md)). |
+| `links.open` | `browser` | Where a Cmd-click (Ctrl-click) on a web link in a Herdr app terminal opens it: `browser`, your own, or `side`, the side browser beside that terminal. |
 | `browser` | `{dock: true, profileScope: "shared", popups: "tab", downloads: ""}` | The Chromium side browser: docked or a window of its own, the profile a worktree starts with (`shared`, `repo`, `worktree`), pop-ups as tabs or blocked, and the downloads folder (yours when empty). |
+| `artifactGuard` | `true` | In Claude Code, a new claude.ai artifact waits until `show` was tried or you asked for an artifact or a link; `false` lets every publish through (see [show.md](show.md)). |
 | `footer.links` | on in Claude Code | The links under the prompt; off in the Herdr app, whose status bar shows them. |
 
 `/cockpit` in Claude Code flips the eight settings worth changing day to day without editing the file. In the Herdr

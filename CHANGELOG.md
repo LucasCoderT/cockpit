@@ -16,8 +16,52 @@ must be here first.
 - Fork: a runner's config can say `"hubForward": "<ip>"`: the hub listens on loopback at `hubPort` (47821) for `tailscale serve` to forward, past the macOS firewall that holds an unsigned binary's incoming connections after every update
 - Fork: `COCKPIT_HUB_LISTEN` reaches the hub again (its login-shell environment dropped it), and a runner's config can say `"hubListen": "<ip>"` so any hub started there listens on its network
 
+## 1.5.2 (2026-11-23)
+
+- New: a show table's columns resize by dragging the edge of their header, so truncated text can be read; a table wider than its card scrolls sideways, and a double-click on an edge fits the columns again (#100)
+- Note: only the show tool's tables resize; a table written in Markdown (a note, the chat) is drawn by Herdr and keeps its widths (#100)
+
+## 1.5.1 (2026-11-23)
+
+- Fix: in Cockpit Chat, dragging the edge of the side panel resizes it; the drag showed but nothing moved (#98)
+- Note: the update puts the fixed Cockpit Chat layout in place; a copy of the layout you made keeps the old ids until you duplicate it again (#98)
+
+## 1.5.0 (2026-11-23)
+
+- New: a Cmd-click on a web link in a Herdr app terminal can open it in the side browser beside that terminal, with links.open set to side in Cockpit settings; your browser stays the default (#96)
+- New: the Herdr app's Dock icon counts the agents that need you, on macOS (dockBadge to turn it off) (#96)
+- New: files in Files and Changes drag into a terminal, which types their paths (#96)
+- New: in Cockpit Chat, the side panel is as wide as you drag it (#96)
+- New: panes take a name with Rename in their header and the palette, and the side browser and show panes are named for what they hold (#96)
+- New: ctrl-alt-arrows move the edge of the focused pane, in both layouts (#96)
+- New: resuming several agents after a restart opens their spaces behind the one you look at (#96)
+- New: cockpit doctor says how to show each terminal's last screen after a reboot (herdr-core restore_screen) (#96)
+- Fix: the agents list follows herdr-core's events, so a status change shows at once and an idle window reads its terminals far less often (#96)
+- Fix: herdr-app check, also run by cockpit doctor, no longer starts or reaches the hub while it loads the mod (#96)
+- Note: link clicks, named panes and pane resizing need Herdr app 0.1.17, the Dock badge and drags 0.1.16; an older Herdr app runs the rest as before (#96)
+
+## 1.4.1 (2026-11-23)
+
+- New: each plan an agent asks to carry out is kept in its session's side panel as Plan 1, Plan 2 and so on, to read again after it is carried out (#94)
+- New: the question cards show a plan as one line that opens it in the side panel, and Cockpit Chat opens the panel on it by itself (#94)
+- New: in Cockpit Chat, paths and links in messages open in one click: a file in the side panel, on its line when given, a URL in the browser (#94)
+- New: in Cockpit Chat, the local images an answer names show under it, each opened full size with a click (#94)
+
+## 1.4.0 (2026-11-23)
+
+- New: a plan approval's card shows the whole plan, read from the transcript and rendered as Markdown, and takes the answer from the card (#92)
+- New: the plan is read where each agent keeps it: Claude Code's ExitPlanMode call, Qwen Code's exit_plan_mode call, Gemini CLI's plan file, Codex's last message in plan mode (#92)
+- Fix: Claude Code 2.1.330's prompts, drawn under a rule of eighth blocks, are no longer cut (#92)
+
+## 1.3.0 (2026-11-20)
+
+- New: in Cockpit Chat, the mode chip is a menu that changes a terminal agent's mode, and Focus turns its focus view on or off (#86)
+- New: Files and Changes in the side panel follow the projects the agent works in, even when it runs from a folder of several, and Review follows the latest one (#86)
+- New: a setting, Files and Changes follow the agent's projects, gives Herdr's own panels back when off (#86)
+
 ## 1.2.1 (2026-11-20)
 
+- New: artifactGuard set to false in config.json lets every claude.ai artifact through, for a machine with no pane to draw in (#82)
 - Fork: the two-way remote desk from creatorofuniverses/cockpit: every app action reaches the runner through herdr-core, and a runner's show panes and window calls are relayed to the desk
 - Fork: `"window": "desk"` in a runner's config sends its window calls to the desk even where it has a Herdr app
 - Fork: a remote desk behind other windows posts a runner's notifications as system notifications on the desk, and their clicks lead into it

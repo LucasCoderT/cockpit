@@ -16,6 +16,7 @@ import { openStart } from "./start.js";
 import { keyed, take } from "./person.js";
 import { openMenu } from "./ui.js";
 import { undoToast } from "./agentsui.js";
+import { projectPanels } from "./projects.js";
 
 /** The view that runs the window's commands in each layout: always shown there, and only once. */
 export const RUNNER = { cockpit: "status", "cockpit-chat": "chat-top" };
@@ -117,6 +118,8 @@ export const NAMED = [
   ["pane.split", { direction: "down" }, "Pane", "Split down", "horizontal"],
   ["pane.close", {}, "Pane", "Close pane", "kill"],
   ["pane.zoom", {}, "Pane", "Zoom pane", "maximize fullscreen"],
+  ["pane.rename", {}, "Pane", "Rename pane", "name title"],
+  ...["left", "right", "up", "down"].map((d) => ["pane.resize", { direction: d }, "Pane", `Move pane edge ${d}`, "resize size wider narrower taller"]),
   ...["left", "right", "up", "down"].map((d) => ["pane.go", { direction: d }, "Pane", `Focus pane ${d}`, "move go"]),
   ...["left", "right", "up", "down"].map((d) => ["pane.swap", { direction: d }, "Pane", `Swap pane ${d}`, "move"]),
   ["space.new", {}, "Space", "New space", "workspace"],
@@ -198,7 +201,13 @@ export function sheet(layout = layoutName(), bound = keys(), section = shownLayo
   const rows = bindings(section, bound).map((b) => ({ keys: b.keys, action: b.action, ...describe(b.action, layout) }));
   rows.push(...VIEW_KEYS.map(([k, title]) => ({ keys: k, action: null, title, group: "In the apps", icon: null })));
   rows.push(...CHAT_KEYS.filter(([, , l]) => l === layout).map(([k, title]) => ({ keys: k, action: null, title, group: "This agent", icon: null })));
-  const sorted = rows.map((r, i) => [r, i]).sort(([a, i], [b, j]) => at(a) - at(b) || i - j).map(([r]) => r);
+  // Herdr's commands a layout binds keep NAMED's order (left, right, up, down), whatever order keys() lists them in.
+  const named = (r) => {
+    const [name, value] = splitAction(r.action ?? "");
+    const n = NAMED.findIndex(([c, args]) => c === name && (value === undefined || Object.values(args)[0] === value));
+    return n < 0 ? NAMED.length : n;
+  };
+  const sorted = rows.map((r, i) => [r, i]).sort(([a, i], [b, j]) => at(a) - at(b) || named(a) - named(b) || i - j).map(([r]) => r);
   return SHEET.map((title) => ({ title, rows: sorted.filter((r) => r.group === title) })).filter((g) => g.rows.length > 0);
 }
 
@@ -220,6 +229,16 @@ export function runAction(action) {
 /** The side panel's children by the names keys and the activity bar use. */
 export const PANELS = { show: "show", review: "review", runbook: "runbook-panel", files: "files", changes: "changes" };
 
+/**
+ * The panel a name shows: cockpit's Files and Changes, which follow the projects the chat's agent works in, where the
+ * layout has them and `chat.projectPanels` is on, else Herdr's.
+ */
+export function panelChild(name, tree) {
+  const child = PANELS[name] ?? name;
+  const ours = `project-${child}`;
+  return (child === "files" || child === "changes") && projectPanels() && nodeOf(ours, tree) ? ours : child;
+}
+
 /** Whether the side panel is open, and on what, as last set; `panelOpen` reads what the shown layout really does. */
 export const PANELED = "cockpit.panel.open";
 export const PANEL_CHILD = "cockpit.panel.child";
@@ -240,7 +259,7 @@ export function settlePanel(tree) {
 
 /** Opens the side panel on that child, left open when it already shows it. */
 export function openPanel(name) {
-  const child = PANELS[name] ?? name ?? shared(PANEL_CHILD) ?? "show";
+  const child = (name && panelChild(name)) ?? shared(PANEL_CHILD) ?? "show";
   setShared(PANELED, true);
   setShared(PANEL_CHILD, child);
   run("layout.select", { stack: "panel-body", child });
@@ -257,7 +276,7 @@ export function closePanel() {
 
 /** Opens the side panel on that child, or closes it when it already shows it. */
 export function togglePanel(name) {
-  const child = PANELS[name] ?? name;
+  const child = name && panelChild(name);
   const showing = nodeOf("panel-body")?.active ?? shared(PANEL_CHILD);
   if (panelOpen() && (!child || showing === child)) closePanel();
   else openPanel(child);

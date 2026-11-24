@@ -3,10 +3,17 @@
 
 import net from "net";
 import { exec, appHome, readTextFile, run, window as win, panes } from "herdr";
+import * as herdr from "herdr";
 import { argsToRunner, toRunner } from "./address.js";
 import { runWindowCommand } from "./window.js";
 import { herdrApp } from "./herdr-app.js";
 import * as extra from "./extra.js";
+
+/** What `herdr-app check` gets in place of the hub: a check loads the mod for real, and must start or reach nothing. */
+const CHECKING = "herdr-app check is loading the mod: it starts and asks nothing";
+
+/** Whether `herdr-app check` loads the mod now; a Herdr older than 0.1.16 never says so. */
+export const checking = () => Boolean(herdr.checking?.());
 
 /** Closes a socket, already closed or not: a throw here would end the subscription that is tidying up. */
 const close = (socket) => {
@@ -162,6 +169,7 @@ async function stoppedOnPurpose(cx) {
  * purpose, or a remote runner's: a window never restarts those by itself.
  */
 export async function startHub({ explicit = false, cx = null } = {}) {
+  if (checking()) throw new Error(CHECKING);
   const s = (globalThis.cockpitHubStart ??= { starting: null, failed: null, at: 0 });
   if (!explicit) {
     // A runner's hub is found again (its port and token) but never started from a desk by itself.
@@ -378,6 +386,7 @@ async function connect(state, cx) {
 
 /** Runs the cockpit binary on the install's HOME, driving this Herdr window: { code, stdout, stderr }. */
 export async function cockpit(args) {
+  if (checking()) throw new Error(CHECKING);
   const { bin, home, env = {}, machine, host } = await install();
   if (machine) {
     if (args[0] === "focus" && args.length === 2) {
@@ -462,6 +471,7 @@ export function desktopClipboard(cx) {
  * are bounded on its timer; one sent and never answered throws with `unconfirmed` (see `isUnconfirmed`).
  */
 export async function request(op, fields = {}, cx = null) {
+  if (checking()) throw new Error(CHECKING);
   // A page opens from the window itself: macOS keeps the browser behind when a background process (the hub) asks.
   if (op === "act" && fields.action === "open_url" && typeof fields.args?.[0] === "string") {
     const url = fields.args[0];
@@ -673,6 +683,7 @@ function beatFor(cx, state, tick) {
  *   subscribe(cx, { views: ["todo"] }, (m, cx) => { this.model = m.value; cx.notify(); });
  */
 export function subscribe(cx, opts, onMessage, onState = () => {}) {
+  if (checking()) return { stopped: true, stop() {} };
   // Across every hub cockpit.json names (extra.js): the agents view lists theirs too, the apps read the picked machine,
   // and `hub` names one hub outright.
   return extra.route(followHub, cx, opts ?? {}, onMessage, onState);
