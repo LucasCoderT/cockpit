@@ -5,6 +5,12 @@ Each version is tagged `v<version>` and has a GitHub release with these notes, b
 plugin, share the version with the apps (`herdr/tui/Cargo.toml`), whose binaries the release builds; the section for it
 must be here first.
 
+## 1.6.2 (2026-11-27)
+
+- Fork: upstream 1.6.0 and 1.6.1 merged in: fast agent switching and paged conversations in Cockpit Chat, coloured code blocks, repo and branch pickers in Review and Changes, pinned apps in the monitor, `monitor.releaseDays`
+- Fork: upstream's new code blocks and dialog text take the terminal font, and its new reading columns widen with the text as the fork's do
+- Fork: the hub reads the process table from the kernel when `ps` cannot
+
 ## 1.6.1 (2026-11-26)
 
 - New: pinned apps carry a pin in the monitor, and pinning or muting an app shows at once instead of after the next refresh (#107)
