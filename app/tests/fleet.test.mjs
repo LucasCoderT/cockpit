@@ -11,6 +11,7 @@ async function fixture(layout = "cockpit", live = null, desktop = {}) {
       agents: () => live ?? [{ address: "t7", tab: "tab7", space: "s1", status: "working", title: "Local agent" }],
       spaces: () => desktop.spaces ?? [{ id: "s1", tabs: [{ id: "tab7" }] }],
       panes: () => desktop.panes ?? [{ terminal: "runner/t7", tab: "rtab", status: "done" }, { terminal: "runner/t8", tab: "rtab", status: "idle" }],
+      terminals: () => [{ address: "t9", parent: "t7", state: "live", name: "tests", status: "working" }, { address: "t10", parent: "t7", state: "ended", name: "old" }, { address: "t11", parent: "t8", state: "live" }],
       run: (...args) => calls.push(args),
       setShared: (...args) => calls.push(["shared", ...args]),
       shared: key => (key === "layout" ? layout : null),
@@ -316,4 +317,14 @@ test("a runner's chat names its agent at the desk's address, where the window's 
   assert.deepEqual([v.agent.terminal, v.agent.address, v.agent.remote], ["app:studio/t4", "studio/t4", "studio"]);
   assert.equal(deskChat({ agent: { terminal: "claude:1-0", driven: true } }, "studio").agent.terminal, "claude:1-0");
   assert.equal(deskChat({ agent: { terminal: "app:t5" } }, null).agent.terminal, "app:t5", "this machine's own chat stays as it is");
+});
+
+test("the terminals an agent started under its own are its live children alone, which the sidebar lists under it", async () => {
+  const { fleet } = await fixture();
+  const plain = (v) => JSON.parse(JSON.stringify(v));
+  assert.deepEqual(plain(fleet.childTerminals("t7").map((t) => t.address)), ["t9"], "live, and under that parent");
+  assert.deepEqual(plain(fleet.childTerminals("runner/t7")), [], "a runner's agents have no children here");
+  assert.deepEqual(plain(fleet.childTerminals("")), []);
+  const sidebar = Object.create(fleet.Sidebar.prototype);
+  assert.deepEqual(plain(sidebar.subRows({}, { address: "t7", remote: "runner" })), [], "a remote row lists none");
 });

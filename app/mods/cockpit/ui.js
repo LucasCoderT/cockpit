@@ -94,6 +94,17 @@ export function tokens() {
 }
 
 /** `color` at this opacity, for tints (a 15% destructive behind its text). */
+/**
+ * A drag that follows the pointer anywhere in the window once pressed on the element (Herdr 0.1.18), else only while
+ * over it. `up` ends it: on release, on leaving the element in an older Herdr, or on a move with no button held.
+ */
+export function followDrag(el, move, up) {
+  if (typeof el.on_window_mouse_move === "function") {
+    return el.on_window_mouse_move((e, cx) => (e.pressed_button === "left" ? move(e, cx) : up(cx))).on_window_mouse_up("left", (_e, cx) => up(cx));
+  }
+  return el.on_mouse_move(move).on_mouse_up("left", (_e, cx) => up(cx)).on_hover((on, cx) => on || up(cx));
+}
+
 /** The element as a drag source of these files into a terminal, which types their paths; a Herdr older than 0.1.16 has none. */
 export function dragPaths(el, paths) {
   return typeof el.drag_paths === "function" && paths.length ? el.drag_paths(paths) : el;
@@ -364,7 +375,7 @@ export function Card({ id, title, description, action, children = [], footer, pa
   return el;
 }
 
-/** shadcn tabs: a muted track with the active trigger raised. items: [{ value, label, count, icon }]. */
+/** shadcn tabs: a muted track with the active trigger raised. items: [{ value, label, count, icon, muted, tooltip }], a muted one faded, its tooltip saying why. */
 export function Tabs(id, { items, value, onChange }) {
   const k = tokens();
   return h_flex()
@@ -392,6 +403,8 @@ export function Tabs(id, { items, value, onChange }) {
           .text_color(on ? k.foreground : k.mutedFg)
           .when(on, (e) => e.bg(k.background).shadow_sm())
           .when(!on, (e) => e.hover((s) => s.text_color(k.foreground)))
+          .when(Boolean(item.muted), (e) => e.opacity(0.5))
+          .when(Boolean(item.tooltip), (e) => e.tooltip(item.tooltip))
           .on_click((ev, cx) => onChange(item.value, cx))
           .when(Boolean(item.icon), (e) => e.child(Icon(item.icon, { size: 14 })))
           .child(item.label)

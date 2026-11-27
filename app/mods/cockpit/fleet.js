@@ -1,7 +1,7 @@
 // The agents as the shell's views see them: Herdr's live agents (status, place, times) joined with the hub's `agents`
 // view (question, recap, branch, PR, CI, changes, cost), each placed in a stage: whose move it is.
 
-import { agents, spaces, panes, run, notify } from "herdr";
+import { agents, spaces, panes, terminals, run, notify } from "herdr";
 import * as herdr from "herdr";
 import * as hub from "./hub.js";
 import { showWork, pinChat, readInChat } from "./screens.js";
@@ -249,6 +249,12 @@ export function refuseRemoteAgent(agent) {
   if (!agent?.remote || desktopTab(agent)) return false;
   notify({title:"This agent has no tab in this window",body:"Open the runner's terminal here before archiving it.",level:"info"});
   return true;
+}
+
+/** The live terminals an agent started under its own (`hc run`), by their parent's address; none on a remote desk. */
+export function childTerminals(address) {
+  if (!address || String(address).includes("/")) return [];
+  return (terminals() ?? []).filter((t) => t.parent === address && t.state === "live");
 }
 
 /** The hub's agents actions, by the contract the agents view keeps: answer, recap, snooze, seen, dismiss, fork. */

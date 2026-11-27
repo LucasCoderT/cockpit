@@ -8,10 +8,26 @@ use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-/// What the starter may hand on: where its ssh agent and temp folder are, and its language.
+/// What the starter may hand on: where its ssh agent and temp folder are, its language, and the desktop session it runs
+/// in (the display, its auth file, the session bus): a bare login shell has none of them, and without them a browser the
+/// hub opens on Linux cannot reach the screen.
 fn from_starter(key: &str) -> bool {
     // COCKPIT_HUB_LISTEN: `COCKPIT_HUB_LISTEN=<ip> cockpit hub start` is how a runner's hub is put on its network.
-    matches!(key, "SSH_AUTH_SOCK" | "TMPDIR" | "LANG" | "LC_ALL" | "COCKPIT_HUB_LISTEN") || key.starts_with("LC_")
+    matches!(
+        key,
+        "SSH_AUTH_SOCK"
+            | "TMPDIR"
+            | "LANG"
+            | "LC_ALL"
+            | "DISPLAY"
+            | "XAUTHORITY"
+            | "WAYLAND_DISPLAY"
+            | "XDG_RUNTIME_DIR"
+            | "DBUS_SESSION_BUS_ADDRESS"
+            | "XDG_CURRENT_DESKTOP"
+            | "XDG_SESSION_TYPE"
+            | "COCKPIT_HUB_LISTEN"
+    ) || key.starts_with("LC_")
 }
 
 /// What the hub never takes, even from the login shell: a terminal's or a window's identity, the binaries and sockets
@@ -172,6 +188,27 @@ mod tests {
 
     fn pairs(list: &[(&str, &str)]) -> Vec<(String, String)> {
         list.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    }
+
+    #[test]
+    fn the_desktop_session_of_the_starter_reaches_the_hub() {
+        let (home, shell) = (std::path::Path::new("/Users/me"), std::path::Path::new("/bin/zsh"));
+        let starter = pairs(&[
+            ("DISPLAY", ":0"),
+            ("XAUTHORITY", "/run/user/1000/gdm/Xauthority"),
+            ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus"),
+            ("XDG_RUNTIME_DIR", "/run/user/1000"),
+            ("WAYLAND_DISPLAY", "wayland-0"),
+            ("HERDR_PANE_ID", "w1:p1"),
+        ]);
+        let env = settled(&starter, &[], home, shell, "me");
+        for kept in ["DISPLAY", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR", "WAYLAND_DISPLAY"] {
+            assert!(env.contains_key(kept), "{kept}");
+        }
+        assert!(!env.contains_key("HERDR_PANE_ID"), "a window's identity still stays out");
+        // What the person's own profile sets wins over the starter's.
+        let env = settled(&starter, &pairs(&[("DISPLAY", ":1")]), home, shell, "me");
+        assert_eq!(env["DISPLAY"], ":1");
     }
 
     #[test]

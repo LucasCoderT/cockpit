@@ -17,14 +17,14 @@ const WHERE = { inbox: "the inbox", runbook: "the runbook", meeting: "Meetings",
 export function deliver(n, install, cx) {
   const remote = Boolean(install?.machine);
   // A remote desk's hub runs on the runner, whose own screen nobody watches: behind, the desk posts it here.
-  if (remote && !win().active && install?.env?.COCKPIT_TOASTS !== "always") {
+  if (remote && !win()?.active && install?.env?.COCKPIT_TOASTS !== "always") {
     cx.spawn(async () => {
       if (!(await postHere(n, install))) toast(n);
     });
     return;
   }
   const always = remote || install?.env?.COCKPIT_TOASTS === "always";
-  if (!win().active && !always) {
+  if (!win()?.active && !always) {
     const args = ["notify", "--system", n.title ?? "", n.body ?? "", n.action ?? "", ...(n.buttons ?? [])];
     // An extra hub's notification (extra.js) goes out through that install's own cockpit.
     cx.spawn(async () => (install?.bin && install?.name ? hub.cockpitOn(install, args) : hub.cockpit(args)));

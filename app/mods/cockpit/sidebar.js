@@ -9,11 +9,11 @@ import * as hub from "./hub.js";
 import * as extra from "./extra.js";
 import { followBrowser } from "./web.js";
 import { deliver } from "./notify.js";
-import { rowsOf, countsOf, agentStatus, needing, showBadge } from "./fleet.js";
+import { rowsOf, countsOf, agentStatus, needing, showBadge, childTerminals } from "./fleet.js";
 import { option } from "./config.js";
 import { show, showWork, showPanes, screens, layoutName, stripLeads } from "./screens.js";
 import { togglePalette, openRecap, hint, keyFor, keyText, lend } from "./commands.js";
-import { inFront } from "./front.js";
+import { inFront, windowHidden } from "./front.js";
 import { UpdateTag, pending as pendingUpdate } from "./update.js";
 import { SettingsLink } from "./doctor.js";
 import { openUsage } from "./usage.js";
@@ -93,7 +93,7 @@ export default class Sidebar {
     this.repos = new Map();
     this.machineList = [];
     this.refreshMachines(cx);
-    cx.timer.every(15000, cx => this.refreshMachines(cx));
+    cx.timer.every(15000, cx => windowHidden() || this.refreshMachines(cx));
     this.drag = null;
     this.update = null;
     this.agents = new AgentsModel();
@@ -561,7 +561,7 @@ export default class Sidebar {
   /** Sub-agents an agent started (`hc run`), under it with tree lines; a click peeks. */
   subRows(k, r) {
     if (r.remote) return [];
-    const kids = (terminals() ?? []).filter((t) => t.parent === r.address && t.state === "live");
+    const kids = childTerminals(r.address);
     return kids.map((t, i) =>
       h_flex()
         .id(`sub-${t.address}`)
